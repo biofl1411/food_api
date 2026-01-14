@@ -219,7 +219,7 @@ class FoodAPIService:
             try:
                 result = await self._search_livestock_companies(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type)
+                    return self._filter_companies(result, region, business_type, keyword)
             except Exception as e:
                 print(f"[축산 업체검색] I1300 오류: {e}")
 
@@ -228,7 +228,7 @@ class FoodAPIService:
             try:
                 result = await self._search_health_food_companies(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type)
+                    return self._filter_companies(result, region, business_type, keyword)
             except Exception as e:
                 print(f"[건강기능식품 업체검색] 오류: {e}")
 
@@ -237,7 +237,7 @@ class FoodAPIService:
             try:
                 result = await self._search_companies_food_safety(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type)
+                    return self._filter_companies(result, region, business_type, keyword)
             except Exception as e:
                 print(f"[업체검색] 식품안전나라 I1220 오류: {e}")
 
@@ -864,10 +864,19 @@ class FoodAPIService:
         self,
         result: CompanySearchResult,
         region: str,
-        business_type: str
+        business_type: str,
+        keyword: str = ""
     ) -> CompanySearchResult:
-        """업체 결과 필터링"""
+        """업체 결과 필터링 (키워드, 지역, 업종)"""
         items = result.items
+
+        # 키워드 필터 (업체명에 키워드 포함 여부)
+        if keyword:
+            keyword_lower = keyword.lower()
+            items = [
+                c for c in items
+                if keyword_lower in (c.company_name or "").lower()
+            ]
 
         # 지역 필터 (콤마로 구분된 여러 지역)
         if region:
