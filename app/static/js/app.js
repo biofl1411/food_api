@@ -1,10 +1,12 @@
 /**
- * 식품 품목 검색 플랫폼 - 프론트엔드 스크립트
+ * 업체 검색 플랫폼 - 프론트엔드 스크립트
  */
 
 // 상태 관리
 const state = {
-    currentQuery: '',
+    keyword: '',
+    region: '',
+    businessType: '',
     currentPage: 1,
     perPage: 10,
     totalCount: 0,
@@ -13,45 +15,67 @@ const state = {
 
 // DOM 요소
 const elements = {
-    searchForm: document.getElementById('search-form'),
-    searchInput: document.getElementById('search-input'),
-    searchStatus: document.getElementById('search-status'),
+    keywordInput: document.getElementById('company-keyword'),
+    searchBtn: document.getElementById('search-btn'),
+    totalCount: document.getElementById('total-count'),
     loading: document.getElementById('loading'),
-    resultsContainer: document.getElementById('results-container'),
-    pagination: document.getElementById('pagination')
+    resultTbody: document.getElementById('result-tbody'),
+    pagination: document.getElementById('pagination'),
+    perPageSelect: document.getElementById('per-page-select'),
+    modal: document.getElementById('product-modal'),
+    modalCompanyName: document.getElementById('modal-company-name'),
+    productLoading: document.getElementById('product-loading'),
+    productList: document.getElementById('product-list')
 };
 
 // 초기화
 document.addEventListener('DOMContentLoaded', () => {
-    showInitialState();
     setupEventListeners();
 });
 
 // 이벤트 리스너 설정
 function setupEventListeners() {
-    elements.searchForm.addEventListener('submit', handleSearch);
+    // 검색 버튼
+    elements.searchBtn.addEventListener('click', handleSearch);
+
+    // 엔터 키 검색
+    elements.keywordInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleSearch();
+    });
+
+    // 페이지당 결과 수 변경
+    elements.perPageSelect.addEventListener('change', (e) => {
+        state.perPage = parseInt(e.target.value);
+        state.currentPage = 1;
+        performSearch();
+    });
+
+    // 모달 외부 클릭 시 닫기
+    elements.modal.addEventListener('click', (e) => {
+        if (e.target === elements.modal) closeModal();
+    });
+
+    // ESC 키로 모달 닫기
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+    });
 }
 
 // 검색 처리
-async function handleSearch(e) {
-    e.preventDefault();
+function handleSearch() {
+    // 검색 조건 수집
+    state.keyword = elements.keywordInput.value.trim();
 
-    const query = elements.searchInput.value.trim();
-    if (!query) return;
+    // 지역 수집 (체크된 항목들)
+    const checkedRegions = document.querySelectorAll('input[name="region"]:checked');
+    state.region = Array.from(checkedRegions).map(cb => cb.value).join(',');
 
-    state.currentQuery = query;
+    // 업종 수집
+    const checkedBusinessType = document.querySelector('input[name="business_type"]:checked');
+    state.businessType = checkedBusinessType ? checkedBusinessType.value : '';
+
     state.currentPage = 1;
-
-    await performSearch();
-}
-
-// 페이지 변경
-async function goToPage(page) {
-    state.currentPage = page;
-    await performSearch();
-
-    // 결과 영역으로 스크롤
-    elements.resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    performSearch();
 }
 
 // 검색 실행
@@ -60,16 +84,17 @@ async function performSearch() {
 
     state.isLoading = true;
     showLoading();
-    hideStatus();
 
     try {
         const params = new URLSearchParams({
-            q: state.currentQuery,
+            keyword: state.keyword,
+            region: state.region,
+            business_type: state.businessType,
             page: state.currentPage,
             per_page: state.perPage
         });
 
-        const response = await fetch(`/api/search?${params}`);
+        const response = await fetch(`/api/companies?${params}`);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -80,11 +105,11 @@ async function performSearch() {
 
         displayResults(data);
         updatePagination(data);
-        showStatus(data);
+        updateTotalCount(data.total_count);
 
     } catch (error) {
         console.error('검색 오류:', error);
-        showError('검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        showError('검색 중 오류가 발생했습니다.');
     } finally {
         state.isLoading = false;
         hideLoading();
@@ -96,83 +121,97 @@ function displayResults(data) {
     const { items } = data;
 
     if (items.length === 0) {
-        showNoResults();
+        elements.resultTbody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="6">조회된 데이터가 없습니다.</td>
+            </tr>
+        `;
         return;
     }
 
-    const html = items.map(item => createFoodCard(item)).join('');
-    elements.resultsContainer.innerHTML = html;
+    const startNo = (state.currentPage - 1) * state.perPage;
+
+    const html = items.map((item, index) => `
+        <tr>
+            <td class="col-no">${startNo + index + 1}</td>
+            <td class="col-license">${escapeHtml(item.license_no || '-')}</td>
+            <td class="col-name">
+                <a class="company-link" onclick="showCompanyProducts('${escapeHtml(item.company_name)}')">
+                    ${escapeHtml(item.company_name)}
+                </a>
+            </td>
+            <td class="col-type">${escapeHtml(item.business_type || '-')}</td>
+            <td class="col-address">${escapeHtml(item.address || '-')}</td>
+            <td class="col-status">
+                <span class="${item.status === '운영' ? 'status-active' : 'status-closed'}">
+                    ${escapeHtml(item.status || '-')}
+                </span>
+            </td>
+        </tr>
+    `).join('');
+
+    elements.resultTbody.innerHTML = html;
 }
 
-// 식품 카드 생성
-function createFoodCard(food) {
-    const formatValue = (value, unit = '') => {
-        if (value === null || value === undefined) return '-';
-        return `${value}${unit}`;
-    };
+// 업체 품목 조회
+async function showCompanyProducts(companyName) {
+    // 모달 열기
+    elements.modal.classList.remove('hidden');
+    elements.modalCompanyName.textContent = companyName + ' - 품목 목록';
+    elements.productLoading.classList.remove('hidden');
+    elements.productList.innerHTML = '';
 
-    // 영양정보가 있는지 확인
-    const hasNutrition = food.calories !== null || food.carbohydrate !== null;
+    try {
+        const response = await fetch(`/api/companies/${encodeURIComponent(companyName)}/products?per_page=50`);
 
-    // 원재료 정보 표시 (너무 길면 자르기)
-    const rawMaterials = food.raw_materials
-        ? (food.raw_materials.length > 200
-            ? food.raw_materials.substring(0, 200) + '...'
-            : food.raw_materials)
-        : null;
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
 
-    return `
-        <article class="food-card">
-            <div class="food-header">
-                <h2 class="food-name">${escapeHtml(food.food_name)}</h2>
-                <div class="food-badges">
-                    ${food.category ? `<span class="food-category">${escapeHtml(food.category)}</span>` : ''}
-                    ${food.api_source ? `<span class="api-source">${escapeHtml(food.api_source)}</span>` : ''}
-                </div>
+        const data = await response.json();
+        displayProducts(data.items);
+
+    } catch (error) {
+        console.error('품목 조회 오류:', error);
+        elements.productList.innerHTML = `
+            <div class="no-products">품목 조회 중 오류가 발생했습니다.</div>
+        `;
+    } finally {
+        elements.productLoading.classList.add('hidden');
+    }
+}
+
+// 품목 목록 표시
+function displayProducts(products) {
+    if (products.length === 0) {
+        elements.productList.innerHTML = `
+            <div class="no-products">등록된 품목이 없습니다.</div>
+        `;
+        return;
+    }
+
+    const html = products.map(product => `
+        <div class="product-item">
+            <div class="product-name">${escapeHtml(product.food_name)}</div>
+            <div class="product-info">
+                ${product.category ? `<span>📁 ${escapeHtml(product.category)}</span>` : ''}
+                ${product.report_no ? `<span>📋 ${escapeHtml(product.report_no)}</span>` : ''}
+                ${product.serving_size ? `<span>📦 ${escapeHtml(product.serving_size)}</span>` : ''}
             </div>
-
-            <div class="food-meta">
-                ${food.manufacturer ? `<span>🏭 제조사: ${escapeHtml(food.manufacturer)}</span>` : ''}
-                ${food.report_no ? `<span>📋 품목번호: ${escapeHtml(food.report_no)}</span>` : ''}
-                ${food.serving_size ? `<span>📦 용량/보관: ${escapeHtml(food.serving_size)}</span>` : ''}
-            </div>
-
-            ${rawMaterials ? `
-                <div class="raw-materials">
-                    <strong>원재료:</strong> ${escapeHtml(rawMaterials)}
+            ${product.raw_materials ? `
+                <div class="product-info" style="margin-top: 8px; color: #888;">
+                    원재료: ${escapeHtml(product.raw_materials.substring(0, 100))}${product.raw_materials.length > 100 ? '...' : ''}
                 </div>
             ` : ''}
+        </div>
+    `).join('');
 
-            ${hasNutrition ? `
-                <div class="nutrition-grid">
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">열량</div>
-                        <div class="nutrition-value calories">${formatValue(food.calories, 'kcal')}</div>
-                    </div>
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">탄수화물</div>
-                        <div class="nutrition-value carbs">${formatValue(food.carbohydrate, 'g')}</div>
-                    </div>
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">단백질</div>
-                        <div class="nutrition-value protein">${formatValue(food.protein, 'g')}</div>
-                    </div>
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">지방</div>
-                        <div class="nutrition-value fat">${formatValue(food.fat, 'g')}</div>
-                    </div>
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">당류</div>
-                        <div class="nutrition-value">${formatValue(food.sugar, 'g')}</div>
-                    </div>
-                    <div class="nutrition-item">
-                        <div class="nutrition-label">나트륨</div>
-                        <div class="nutrition-value">${formatValue(food.sodium, 'mg')}</div>
-                    </div>
-                </div>
-            ` : ''}
-        </article>
-    `;
+    elements.productList.innerHTML = html;
+}
+
+// 모달 닫기
+function closeModal() {
+    elements.modal.classList.add('hidden');
 }
 
 // 페이지네이션 업데이트
@@ -201,7 +240,7 @@ function updatePagination(data) {
     if (startPage > 1) {
         html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
         if (startPage > 2) {
-            html += `<span class="page-info">...</span>`;
+            html += `<span style="padding: 0 5px;">...</span>`;
         }
     }
 
@@ -216,7 +255,7 @@ function updatePagination(data) {
 
     if (endPage < totalPages) {
         if (endPage < totalPages - 1) {
-            html += `<span class="page-info">...</span>`;
+            html += `<span style="padding: 0 5px;">...</span>`;
         }
         html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
     }
@@ -233,67 +272,35 @@ function updatePagination(data) {
     elements.pagination.classList.remove('hidden');
 }
 
-// 상태 표시
-function showStatus(data) {
-    const start = (state.currentPage - 1) * state.perPage + 1;
-    const end = Math.min(state.currentPage * state.perPage, data.total_count);
-
-    elements.searchStatus.innerHTML = `
-        '<strong>${escapeHtml(state.currentQuery)}</strong>' 검색 결과:
-        총 <strong>${data.total_count.toLocaleString()}</strong>건
-        (${start}-${end}번째 표시 중)
-    `;
-    elements.searchStatus.classList.remove('hidden');
+// 페이지 이동
+function goToPage(page) {
+    state.currentPage = page;
+    performSearch();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function hideStatus() {
-    elements.searchStatus.classList.add('hidden');
-}
-
-// 초기 상태 표시
-function showInitialState() {
-    elements.resultsContainer.innerHTML = `
-        <div class="initial-state">
-            <div class="initial-state-icon">🔍</div>
-            <h3>식품 정보를 검색해보세요</h3>
-            <p>제품명을 입력하면 제조사, 원재료 등 상세 정보를 확인할 수 있습니다.</p>
-        </div>
-    `;
-}
-
-// 결과 없음 표시
-function showNoResults() {
-    elements.resultsContainer.innerHTML = `
-        <div class="no-results">
-            <div class="no-results-icon">😔</div>
-            <h3>검색 결과가 없습니다</h3>
-            <p>'${escapeHtml(state.currentQuery)}'에 대한 검색 결과를 찾을 수 없습니다.<br>다른 키워드로 검색해보세요.</p>
-        </div>
-    `;
-    elements.pagination.classList.add('hidden');
-}
-
-// 에러 표시
-function showError(message) {
-    elements.resultsContainer.innerHTML = `
-        <div class="no-results">
-            <div class="no-results-icon">⚠️</div>
-            <h3>오류 발생</h3>
-            <p>${escapeHtml(message)}</p>
-        </div>
-    `;
-    elements.pagination.classList.add('hidden');
+// 총 건수 업데이트
+function updateTotalCount(count) {
+    elements.totalCount.textContent = count.toLocaleString();
 }
 
 // 로딩 표시
 function showLoading() {
     elements.loading.classList.remove('hidden');
-    elements.resultsContainer.innerHTML = '';
-    elements.pagination.classList.add('hidden');
+    elements.resultTbody.innerHTML = '';
 }
 
 function hideLoading() {
     elements.loading.classList.add('hidden');
+}
+
+// 에러 표시
+function showError(message) {
+    elements.resultTbody.innerHTML = `
+        <tr class="empty-row">
+            <td colspan="6">${escapeHtml(message)}</td>
+        </tr>
+    `;
 }
 
 // HTML 이스케이프
