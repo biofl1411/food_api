@@ -392,16 +392,12 @@ class FoodAPIService:
         print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}', page: {page}, per_page: {per_page}")
         try:
             async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
-                # 페이지네이션 적용 (I1220과 동일한 방식)
-                start_idx = (page - 1) * per_page + 1
-                end_idx = start_idx + per_page - 1
+                # 기본 URL 형식: /api/keyId/serviceId/dataType/startIdx/endIdx
+                # 키워드 필터링은 데이터 조회 후 로컬에서 처리
+                start_idx = 1
+                end_idx = 500  # 충분한 데이터 조회 후 필터링
 
-                # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
-                if keyword:
-                    encoded_keyword = urllib.parse.quote(keyword, safe='')
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}/BSSH_NM={encoded_keyword}"
-                else:
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}"
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}"
 
                 print(f"[I1300] 요청 URL: {url}")
                 response = await client.get(url)
