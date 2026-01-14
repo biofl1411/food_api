@@ -149,6 +149,11 @@ class FoodAPIService:
         # API 타임아웃 (초) - 빠른 폴백을 위해 짧게 설정
         self.api_timeout = 5.0
 
+        # 디버그: API 키 로드 상태 출력
+        print(f"[FoodAPIService 초기화]")
+        print(f"  - api_key_1: {'설정됨 (' + self.api_key_1[:10] + '...)' if self.api_key_1 else '없음'}")
+        print(f"  - food_safety_api_key: {'설정됨 (' + self.food_safety_api_key[:10] + '...)' if self.food_safety_api_key else '없음'}")
+
     def _decode_api_key(self, key: str) -> str:
         """URL 인코딩된 API 키를 자동 디코딩 (이중 인코딩 방지)"""
         if not key:
