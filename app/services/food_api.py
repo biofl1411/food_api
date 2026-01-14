@@ -138,6 +138,11 @@ class FoodAPIService:
             "name": "건강기능식품업소 인허가 변경 정보",
             "service_id": "I2860",
             "description": "건강기능식품 업체 정보 조회"
+        },
+        "C002": {
+            "name": "식품품목제조보고(원재료)",
+            "service_id": "C002",
+            "description": "품목 정보 + 원재료 조회"
         }
     }
 
@@ -283,16 +288,16 @@ class FoodAPIService:
         page: int = 1,
         per_page: int = 20
     ) -> FoodSearchResult:
-        """업체별 품목 검색 (공공데이터포털 → 식품안전나라 I1250 폴백)"""
+        """업체별 품목 검색 (C002 원재료 포함 → I1250 폴백)"""
 
-        # 1차: 공공데이터포털 API 시도
-        if self.api_key_1:
+        # 1차: 식품안전나라 C002 API (원재료 정보 포함)
+        if self.food_safety_api_key:
             try:
-                result = await self._search_products_data_go_kr(company_name, "", page, per_page)
+                result = await self._search_products_c002(company_name, "", page, per_page)
                 if result and result.total_count > 0:
                     return result
             except Exception as e:
-                print(f"[품목검색] 공공데이터포털 오류: {e}")
+                print(f"[품목검색] C002 오류: {e}")
 
         # 2차: 식품안전나라 I1250 API 폴백
         if self.food_safety_api_key:
@@ -301,7 +306,7 @@ class FoodAPIService:
                 if result and result.total_count > 0:
                     return result
             except Exception as e:
-                print(f"[품목검색] 식품안전나라 오류: {e}")
+                print(f"[품목검색] I1250 오류: {e}")
 
         # 3차: 샘플 데이터 반환
         return self._get_sample_products_by_company(company_name, page, per_page)
@@ -392,6 +397,80 @@ class FoodAPIService:
             print(f"[I1250] 예외 발생: {type(e).__name__}: {e}")
             raise
         return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def _search_products_c002(
+        self, company_name: str, product_name: str, page: int, per_page: int
+    ) -> FoodSearchResult:
+        """식품안전나라 C002 품목 검색 (원재료 정보 포함)"""
+        print(f"[C002] 호출 시작 - company: '{company_name}', product: '{product_name}'")
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+                start_idx = (page - 1) * per_page + 1
+                end_idx = start_idx + per_page - 1
+
+                # URL 형식: /api/키/C002/json/시작/끝/BSSH_NM=값
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/C002/json/{start_idx}/{end_idx}"
+
+                # 검색 조건 추가 (한글 URL 인코딩 필수)
+                if company_name:
+                    encoded_company = urllib.parse.quote(company_name, safe='')
+                    url += f"/BSSH_NM={encoded_company}"
+                if product_name:
+                    encoded_product = urllib.parse.quote(product_name, safe='')
+                    url += f"/PRDLST_NM={encoded_product}"
+
+                print(f"[C002] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[C002] 응답 상태: {response.status_code}")
+                print(f"[C002] 응답 본문 (처음 500자): {response.text[:500]}")
+
+                if response.status_code == 200:
+                    return self._parse_c002_product_response(response.json(), page, per_page)
+        except Exception as e:
+            print(f"[C002] 예외 발생: {type(e).__name__}: {e}")
+            raise
+        return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_c002_product_response(
+        self, data: dict, page: int, per_page: int
+    ) -> FoodSearchResult:
+        """C002 API 응답 파싱 (원재료 정보 포함)"""
+        try:
+            service_data = data.get("C002", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                food = FoodItem(
+                    food_name=item.get("PRDLST_NM", ""),
+                    food_code=item.get("PRDLST_REPORT_NO", ""),
+                    category=item.get("PRDLST_DCNM", ""),
+                    manufacturer=item.get("BSSH_NM", ""),
+                    report_no=item.get("PRDLST_REPORT_NO", ""),
+                    raw_materials=item.get("RAWMTRL_NM", ""),  # 원재료 정보!
+                    license_no=item.get("LCNS_NO", ""),
+                    permit_date=item.get("PRMS_DT", ""),
+                    last_update=item.get("CHNG_DT", ""),
+                    api_source="식품안전나라(C002)"
+                )
+                items.append(food)
+
+            return FoodSearchResult(
+                total_count=total_count,
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[C002] 파싱 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     def _filter_companies(
         self,
