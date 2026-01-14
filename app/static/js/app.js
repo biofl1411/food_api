@@ -67,19 +67,27 @@ function setupEventListeners() {
 // 검색 처리
 function handleSearch() {
     console.log('[DEBUG] handleSearch 호출됨');
-    // 검색 조건 수집
-    state.keyword = elements.keywordInput.value.trim();
+    try {
+        // 검색 조건 수집
+        state.keyword = elements.keywordInput.value.trim();
+        console.log('[DEBUG] keyword:', state.keyword);
 
-    // 지역 수집 (체크된 항목들)
-    const checkedRegions = document.querySelectorAll('input[name="region"]:checked');
-    state.region = Array.from(checkedRegions).map(cb => cb.value).join(',');
+        // 지역 수집 (체크된 항목들)
+        const checkedRegions = document.querySelectorAll('input[name="region"]:checked');
+        state.region = Array.from(checkedRegions).map(cb => cb.value).join(',');
+        console.log('[DEBUG] region:', state.region);
 
-    // 업종 수집
-    const checkedBusinessType = document.querySelector('input[name="business_type"]:checked');
-    state.businessType = checkedBusinessType ? checkedBusinessType.value : '';
+        // 업종 수집
+        const checkedBusinessType = document.querySelector('input[name="business_type"]:checked');
+        state.businessType = checkedBusinessType ? checkedBusinessType.value : '';
+        console.log('[DEBUG] businessType:', state.businessType);
 
-    state.currentPage = 1;
-    performSearch();
+        state.currentPage = 1;
+        console.log('[DEBUG] performSearch 호출 직전');
+        performSearch();
+    } catch (error) {
+        console.error('[DEBUG] handleSearch 에러:', error);
+    }
 }
 
 // 검색 실행

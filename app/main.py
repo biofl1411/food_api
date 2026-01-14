@@ -35,6 +35,12 @@ async def root():
     return FileResponse(os.path.join(static_path, "index.html"))
 
 
+@app.get("/favicon.ico", response_class=FileResponse)
+async def favicon():
+    """파비콘"""
+    return FileResponse(os.path.join(static_path, "favicon.svg"), media_type="image/svg+xml")
+
+
 @app.get("/api/companies", response_model=CompanySearchResult)
 async def search_companies(
     keyword: str = Query("", description="업체명 키워드"),
