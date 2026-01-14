@@ -582,8 +582,21 @@ class FoodAPIService:
                        address="경기도 용인시 기흥구 789", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="남양유업(주)", license_no="19640013", business_type="식품",
                        address="경기도 세종시 세종로 111", region="경기", status="운영", api_source="샘플"),
-            CompanyItem(company_name="하림(주)", license_no="19860014", business_type="식품",
-                       address="경기도 이천시 부발읍 222", region="경기", status="운영", api_source="샘플"),
+            # 축산
+            CompanyItem(company_name="하림(주)", license_no="19860014", business_type="축산",
+                       address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="마니커(주)", license_no="19920201", business_type="축산",
+                       address="충청남도 천안시 동남구 123", region="충남", status="운영", api_source="샘플"),
+            CompanyItem(company_name="선진(주)", license_no="19800202", business_type="축산",
+                       address="경기도 파주시 문산읍 456", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="목우촌(주)", license_no="19840203", business_type="축산",
+                       address="경상북도 영천시 북안면 789", region="경북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="도드람푸드(주)", license_no="19950204", business_type="축산",
+                       address="경기도 안성시 미양면 111", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="체리부로(주)", license_no="19850205", business_type="축산",
+                       address="충청북도 음성군 대소면 222", region="충북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="사조팜스(주)", license_no="19900206", business_type="축산",
+                       address="경상북도 상주시 함창읍 333", region="경북", status="운영", api_source="샘플"),
             # 부산
             CompanyItem(company_name="삼진어묵(주)", license_no="19530020", business_type="식품",
                        address="부산광역시 영도구 봉래동 123", region="부산", status="운영", api_source="샘플"),
@@ -718,6 +731,44 @@ class FoodAPIService:
             "한국야쿠르트(주)": [
                 FoodItem(food_name="야쿠르트", category="발효유", manufacturer="한국야쿠르트(주)", report_no="YK001", raw_materials="탈지분유, 유산균, 설탕", api_source="샘플"),
                 FoodItem(food_name="쿠퍼스", category="건강음료", manufacturer="한국야쿠르트(주)", report_no="YK002", raw_materials="정제수, 비타민, 미네랄", api_source="샘플"),
+            ],
+            # 축산 업체
+            "하림(주)": [
+                FoodItem(food_name="하림 IFF 치킨너겟", category="닭고기가공품", manufacturer="하림(주)", report_no="HR001", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="하림 닭가슴살", category="닭고기", manufacturer="하림(주)", report_no="HR002", raw_materials="닭가슴살", api_source="샘플"),
+                FoodItem(food_name="하림 치킨까스", category="닭고기가공품", manufacturer="하림(주)", report_no="HR003", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="하림 닭볶음탕용", category="닭고기", manufacturer="하림(주)", report_no="HR004", raw_materials="닭고기", api_source="샘플"),
+                FoodItem(food_name="하림 더미니 소시지", category="소시지", manufacturer="하림(주)", report_no="HR005", raw_materials="닭고기, 전분, 소금", api_source="샘플"),
+            ],
+            "마니커(주)": [
+                FoodItem(food_name="마니커 순살치킨", category="닭고기가공품", manufacturer="마니커(주)", report_no="MK001", raw_materials="닭고기, 밀가루, 전분", api_source="샘플"),
+                FoodItem(food_name="마니커 치킨텐더", category="닭고기가공품", manufacturer="마니커(주)", report_no="MK002", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="마니커 닭다리살", category="닭고기", manufacturer="마니커(주)", report_no="MK003", raw_materials="닭다리살", api_source="샘플"),
+            ],
+            "선진(주)": [
+                FoodItem(food_name="선진 한돈 삼겹살", category="돼지고기", manufacturer="선진(주)", report_no="SJ001", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="선진 한돈 목살", category="돼지고기", manufacturer="선진(주)", report_no="SJ002", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="선진 한돈 앞다리살", category="돼지고기", manufacturer="선진(주)", report_no="SJ003", raw_materials="돼지고기", api_source="샘플"),
+            ],
+            "목우촌(주)": [
+                FoodItem(food_name="목우촌 뚝심한우", category="소고기", manufacturer="목우촌(주)", report_no="MW001", raw_materials="한우", api_source="샘플"),
+                FoodItem(food_name="목우촌 주부9단 베이컨", category="베이컨", manufacturer="목우촌(주)", report_no="MW002", raw_materials="돼지고기, 소금, 향신료", api_source="샘플"),
+                FoodItem(food_name="목우촌 프리미엄 소시지", category="소시지", manufacturer="목우촌(주)", report_no="MW003", raw_materials="돼지고기, 전분, 소금", api_source="샘플"),
+            ],
+            "도드람푸드(주)": [
+                FoodItem(food_name="도드람 한돈 삼겹살", category="돼지고기", manufacturer="도드람푸드(주)", report_no="DD001", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="도드람 수제 햄", category="햄", manufacturer="도드람푸드(주)", report_no="DD002", raw_materials="돼지고기, 소금, 향신료", api_source="샘플"),
+                FoodItem(food_name="도드람 프랑크 소시지", category="소시지", manufacturer="도드람푸드(주)", report_no="DD003", raw_materials="돼지고기, 전분, 소금", api_source="샘플"),
+            ],
+            "체리부로(주)": [
+                FoodItem(food_name="체리부로 닭가슴살", category="닭고기", manufacturer="체리부로(주)", report_no="CB001", raw_materials="닭가슴살", api_source="샘플"),
+                FoodItem(food_name="체리부로 훈제치킨", category="닭고기가공품", manufacturer="체리부로(주)", report_no="CB002", raw_materials="닭고기, 소금, 훈연향", api_source="샘플"),
+                FoodItem(food_name="체리부로 닭안심", category="닭고기", manufacturer="체리부로(주)", report_no="CB003", raw_materials="닭안심", api_source="샘플"),
+            ],
+            "사조팜스(주)": [
+                FoodItem(food_name="사조팜스 통닭다리", category="닭고기", manufacturer="사조팜스(주)", report_no="SP001", raw_materials="닭다리", api_source="샘플"),
+                FoodItem(food_name="사조팜스 닭볶음탕용", category="닭고기", manufacturer="사조팜스(주)", report_no="SP002", raw_materials="닭고기", api_source="샘플"),
+                FoodItem(food_name="사조팜스 닭가슴살 슬라이스", category="닭고기", manufacturer="사조팜스(주)", report_no="SP003", raw_materials="닭가슴살", api_source="샘플"),
             ],
         }
 
