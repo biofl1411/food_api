@@ -337,19 +337,15 @@ class FoodAPIService:
         self, keyword: str, page: int, per_page: int
     ) -> CompanySearchResult:
         """식품안전나라 I2860 건강기능식품 업체 검색"""
+        print(f"[I2860] 건강기능식품 업체검색 시작 - keyword: '{keyword}'")
         async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-            start_idx = (page - 1) * per_page + 1
-            end_idx = start_idx + per_page - 1
+            # 키워드를 API에 전달하지 않고 더 많은 결과를 가져와서 로컬 필터링
+            # (API가 정확히 일치하는 업체명만 반환하므로 부분 검색이 안 됨)
+            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
 
-            # URL 형식: /api/키/I2860/json/시작/끝/BSSH_NM=값
-            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}"
-            if keyword:
-                # URL 경로에 한글 직접 삽입 시 명시적 인코딩 필요
-                encoded_keyword = urllib.parse.quote(keyword, safe='')
-                url += f"/BSSH_NM={encoded_keyword}"
-
+            print(f"[I2860] 요청 URL: {url}")
             response = await client.get(url)
-            print(f"[건강기능식품 업체검색] 상태: {response.status_code}")
+            print(f"[I2860] 응답 상태: {response.status_code}")
 
             if response.status_code == 200:
                 return self._parse_health_food_company_response(response.json(), page, per_page)
@@ -362,14 +358,9 @@ class FoodAPIService:
         print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}'")
         try:
             async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-                start_idx = (page - 1) * per_page + 1
-                end_idx = start_idx + per_page - 1
-
-                # URL 형식: /api/키/I1300/json/시작/끝/BSSH_NM=값
-                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}"
-                if keyword:
-                    encoded_keyword = urllib.parse.quote(keyword, safe='')
-                    url += f"/BSSH_NM={encoded_keyword}"
+                # 키워드를 API에 전달하지 않고 더 많은 결과를 가져와서 로컬 필터링
+                # (API가 정확히 일치하는 업체명만 반환하므로 부분 검색이 안 됨)
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/500"
 
                 print(f"[I1300] 요청 URL: {url}")
                 response = await client.get(url)
