@@ -1,5 +1,5 @@
 /**
- * 식품 영양정보 검색 플랫폼 - 프론트엔드 스크립트
+ * 식품 품목 검색 플랫폼 - 프론트엔드 스크립트
  */
 
 // 상태 관리
@@ -111,6 +111,16 @@ function createFoodCard(food) {
         return `${value}${unit}`;
     };
 
+    // 영양정보가 있는지 확인
+    const hasNutrition = food.calories !== null || food.carbohydrate !== null;
+
+    // 원재료 정보 표시 (너무 길면 자르기)
+    const rawMaterials = food.raw_materials
+        ? (food.raw_materials.length > 200
+            ? food.raw_materials.substring(0, 200) + '...'
+            : food.raw_materials)
+        : null;
+
     return `
         <article class="food-card">
             <div class="food-header">
@@ -119,36 +129,45 @@ function createFoodCard(food) {
             </div>
 
             <div class="food-meta">
-                ${food.serving_size ? `<span>📏 1회 제공량: ${escapeHtml(food.serving_size)}</span>` : ''}
                 ${food.manufacturer ? `<span>🏭 제조사: ${escapeHtml(food.manufacturer)}</span>` : ''}
+                ${food.report_no ? `<span>📋 품목번호: ${escapeHtml(food.report_no)}</span>` : ''}
+                ${food.serving_size ? `<span>📦 보관방법: ${escapeHtml(food.serving_size)}</span>` : ''}
             </div>
 
-            <div class="nutrition-grid">
-                <div class="nutrition-item">
-                    <div class="nutrition-label">열량</div>
-                    <div class="nutrition-value calories">${formatValue(food.calories, 'kcal')}</div>
+            ${rawMaterials ? `
+                <div class="raw-materials">
+                    <strong>원재료:</strong> ${escapeHtml(rawMaterials)}
                 </div>
-                <div class="nutrition-item">
-                    <div class="nutrition-label">탄수화물</div>
-                    <div class="nutrition-value carbs">${formatValue(food.carbohydrate, 'g')}</div>
+            ` : ''}
+
+            ${hasNutrition ? `
+                <div class="nutrition-grid">
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">열량</div>
+                        <div class="nutrition-value calories">${formatValue(food.calories, 'kcal')}</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">탄수화물</div>
+                        <div class="nutrition-value carbs">${formatValue(food.carbohydrate, 'g')}</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">단백질</div>
+                        <div class="nutrition-value protein">${formatValue(food.protein, 'g')}</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">지방</div>
+                        <div class="nutrition-value fat">${formatValue(food.fat, 'g')}</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">당류</div>
+                        <div class="nutrition-value">${formatValue(food.sugar, 'g')}</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="nutrition-label">나트륨</div>
+                        <div class="nutrition-value">${formatValue(food.sodium, 'mg')}</div>
+                    </div>
                 </div>
-                <div class="nutrition-item">
-                    <div class="nutrition-label">단백질</div>
-                    <div class="nutrition-value protein">${formatValue(food.protein, 'g')}</div>
-                </div>
-                <div class="nutrition-item">
-                    <div class="nutrition-label">지방</div>
-                    <div class="nutrition-value fat">${formatValue(food.fat, 'g')}</div>
-                </div>
-                <div class="nutrition-item">
-                    <div class="nutrition-label">당류</div>
-                    <div class="nutrition-value">${formatValue(food.sugar, 'g')}</div>
-                </div>
-                <div class="nutrition-item">
-                    <div class="nutrition-label">나트륨</div>
-                    <div class="nutrition-value">${formatValue(food.sodium, 'mg')}</div>
-                </div>
-            </div>
+            ` : ''}
         </article>
     `;
 }
@@ -233,8 +252,8 @@ function showInitialState() {
     elements.resultsContainer.innerHTML = `
         <div class="initial-state">
             <div class="initial-state-icon">🔍</div>
-            <h3>식품 영양정보를 검색해보세요</h3>
-            <p>식품명을 입력하면 열량, 탄수화물, 단백질, 지방 등 상세 영양정보를 확인할 수 있습니다.</p>
+            <h3>식품 정보를 검색해보세요</h3>
+            <p>제품명을 입력하면 제조사, 원재료 등 상세 정보를 확인할 수 있습니다.</p>
         </div>
     `;
 }

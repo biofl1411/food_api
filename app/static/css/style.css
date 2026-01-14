@@ -256,6 +256,17 @@ body {
     color: #8b5cf6;
 }
 
+/* 원재료 정보 */
+.raw-materials {
+    background: #f1f5f9;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
 /* 빈 결과 */
 .no-results {
     text-align: center;
