@@ -201,6 +201,7 @@ class FoodAPIService:
         }
     }
 
+    # 식품안전나라 API 기본 URL
     FOOD_SAFETY_BASE_URL = "http://openapi.foodsafetykorea.go.kr/api"
 
     def __init__(self):
@@ -310,7 +311,7 @@ class FoodAPIService:
         """식품안전나라 I1220 업체 검색"""
         print(f"[I1220] 호출 시작 - keyword: '{keyword}'")
         try:
-            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
                 start_idx = (page - 1) * per_page + 1
                 end_idx = start_idx + per_page - 1
 
@@ -327,10 +328,21 @@ class FoodAPIService:
                 print(f"[I1220] 응답 본문 (처음 500자): {response.text[:500]}")
 
                 if response.status_code == 200:
-                    return self._parse_food_safety_company_response(response.json(), page, per_page)
+                    try:
+                        data = response.json()
+                        return self._parse_food_safety_company_response(data, page, per_page)
+                    except Exception as json_err:
+                        print(f"[I1220] JSON 파싱 오류: {json_err}")
+                elif response.status_code == 403:
+                    print(f"[I1220] API 접근 거부 (403): IP 차단 또는 API 키 문제")
+                else:
+                    print(f"[I1220] API 오류 응답: {response.status_code}")
+        except httpx.TimeoutException:
+            print(f"[I1220] 타임아웃 발생")
+        except httpx.ConnectError as e:
+            print(f"[I1220] 연결 오류: {e}")
         except Exception as e:
             print(f"[I1220] 예외 발생: {type(e).__name__}: {e}")
-            raise
         return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     async def _search_health_food_companies(
@@ -338,20 +350,35 @@ class FoodAPIService:
     ) -> CompanySearchResult:
         """식품안전나라 I2860 건강기능식품 업체 검색"""
         print(f"[I2860] 건강기능식품 업체검색 시작 - keyword: '{keyword}'")
-        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-            # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
-            if keyword:
-                encoded_keyword = urllib.parse.quote(keyword, safe='')
-                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/100/BSSH_NM={encoded_keyword}"
-            else:
-                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
+                # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
+                if keyword:
+                    encoded_keyword = urllib.parse.quote(keyword, safe='')
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/100/BSSH_NM={encoded_keyword}"
+                else:
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
 
-            print(f"[I2860] 요청 URL: {url}")
-            response = await client.get(url)
-            print(f"[I2860] 응답 상태: {response.status_code}")
+                print(f"[I2860] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[I2860] 응답 상태: {response.status_code}")
 
-            if response.status_code == 200:
-                return self._parse_health_food_company_response(response.json(), page, per_page)
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        return self._parse_health_food_company_response(data, page, per_page)
+                    except Exception as json_err:
+                        print(f"[I2860] JSON 파싱 오류: {json_err}")
+                elif response.status_code == 403:
+                    print(f"[I2860] API 접근 거부 (403): {response.text[:200]}")
+                else:
+                    print(f"[I2860] API 오류 응답: {response.status_code}")
+        except httpx.TimeoutException:
+            print(f"[I2860] 타임아웃 발생")
+        except httpx.ConnectError as e:
+            print(f"[I2860] 연결 오류: {e}")
+        except Exception as e:
+            print(f"[I2860] 예외 발생: {type(e).__name__}: {e}")
         return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     async def _search_livestock_companies(
@@ -360,7 +387,7 @@ class FoodAPIService:
         """식품안전나라 I1300 축산물 가공업 허가정보 검색"""
         print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}'")
         try:
-            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
                 # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
                 if keyword:
                     encoded_keyword = urllib.parse.quote(keyword, safe='')
@@ -374,10 +401,23 @@ class FoodAPIService:
                 print(f"[I1300] 응답 본문 (처음 500자): {response.text[:500]}")
 
                 if response.status_code == 200:
-                    return self._parse_livestock_company_response(response.json(), page, per_page)
+                    # JSON 파싱 시도
+                    try:
+                        data = response.json()
+                        return self._parse_livestock_company_response(data, page, per_page)
+                    except Exception as json_err:
+                        print(f"[I1300] JSON 파싱 오류: {json_err}")
+                        return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+                elif response.status_code == 403:
+                    print(f"[I1300] API 접근 거부 (403): IP 차단 또는 API 키 문제")
+                else:
+                    print(f"[I1300] API 오류 응답: {response.status_code}")
+        except httpx.TimeoutException:
+            print(f"[I1300] 타임아웃 발생")
+        except httpx.ConnectError as e:
+            print(f"[I1300] 연결 오류: {e}")
         except Exception as e:
             print(f"[I1300] 예외 발생: {type(e).__name__}: {e}")
-            raise
         return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     async def search_products_by_company(
