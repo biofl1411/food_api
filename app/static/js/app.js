@@ -84,6 +84,8 @@ function handleSearch() {
 
 // 검색 실행
 async function performSearch() {
+    console.log('[DEBUG] performSearch 시작');
+    console.log('[DEBUG] state:', JSON.stringify(state));
     if (state.isLoading) return;
 
     state.isLoading = true;
@@ -98,6 +100,7 @@ async function performSearch() {
             per_page: state.perPage
         });
 
+        console.log('[DEBUG] API 호출:', `/api/companies?${params}`);
         const response = await fetch(`/api/companies?${params}`);
 
         if (!response.ok) {
