@@ -92,9 +92,12 @@ function handleSearch() {
 
 // 검색 실행
 async function performSearch() {
-    console.log('[DEBUG] performSearch 시작');
-    console.log('[DEBUG] state:', JSON.stringify(state));
-    if (state.isLoading) return;
+    console.log('[DEBUG v4] performSearch 시작');
+    console.log('[DEBUG v4] state:', JSON.stringify(state));
+    if (state.isLoading) {
+        console.log('[DEBUG v4] isLoading=true, 종료');
+        return;
+    }
 
     state.isLoading = true;
     showLoading();
@@ -108,22 +111,28 @@ async function performSearch() {
             per_page: state.perPage
         });
 
-        console.log('[DEBUG] API 호출:', `/api/companies?${params}`);
+        console.log('[DEBUG v4] API 호출:', `/api/companies?${params}`);
         const response = await fetch(`/api/companies?${params}`);
+        console.log('[DEBUG v4] response.status:', response.status);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
+        console.log('[DEBUG v4] data:', JSON.stringify(data).substring(0, 500));
+        console.log('[DEBUG v4] total_count:', data.total_count);
+        console.log('[DEBUG v4] items.length:', data.items ? data.items.length : 'undefined');
+
         state.totalCount = data.total_count;
 
         displayResults(data);
         updatePagination(data);
         updateTotalCount(data.total_count);
+        console.log('[DEBUG v4] 표시 완료');
 
     } catch (error) {
-        console.error('검색 오류:', error);
+        console.error('[DEBUG v4] 검색 오류:', error);
         showError('검색 중 오류가 발생했습니다.');
     } finally {
         state.isLoading = false;
