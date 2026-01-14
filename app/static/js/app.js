@@ -30,7 +30,10 @@ const elements = {
 
 // 초기화
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[DEBUG] DOMContentLoaded - 초기화 시작');
+    console.log('[DEBUG] searchBtn:', elements.searchBtn);
     setupEventListeners();
+    console.log('[DEBUG] 이벤트 리스너 등록 완료');
 });
 
 // 이벤트 리스너 설정
@@ -63,6 +66,7 @@ function setupEventListeners() {
 
 // 검색 처리
 function handleSearch() {
+    console.log('[DEBUG] handleSearch 호출됨');
     // 검색 조건 수집
     state.keyword = elements.keywordInput.value.trim();
 
