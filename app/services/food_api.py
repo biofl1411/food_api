@@ -364,27 +364,33 @@ class FoodAPIService:
         self, company_name: str, product_name: str, page: int, per_page: int
     ) -> FoodSearchResult:
         """식품안전나라 I1250 품목 검색 (상세 정보 포함)"""
-        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-            start_idx = (page - 1) * per_page + 1
-            end_idx = start_idx + per_page - 1
+        print(f"[I1250] 호출 시작 - company: '{company_name}', product: '{product_name}'")
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+                start_idx = (page - 1) * per_page + 1
+                end_idx = start_idx + per_page - 1
 
-            # URL 형식: /api/키/I1250/json/시작/끝
-            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1250/json/{start_idx}/{end_idx}"
+                # URL 형식: /api/키/I1250/json/시작/끝/BSSH_NM=값
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1250/json/{start_idx}/{end_idx}"
 
-            # 검색 조건 추가
-            params = []
-            if company_name:
-                params.append(f"BSSH_NM={company_name}")
-            if product_name:
-                params.append(f"PRDLST_NM={product_name}")
-            if params:
-                url += "/" + "&".join(params)
+                # 검색 조건 추가 (한글 URL 인코딩 필수)
+                if company_name:
+                    encoded_company = urllib.parse.quote(company_name, safe='')
+                    url += f"/BSSH_NM={encoded_company}"
+                if product_name:
+                    encoded_product = urllib.parse.quote(product_name, safe='')
+                    url += f"/PRDLST_NM={encoded_product}"
 
-            response = await client.get(url)
-            print(f"[품목검색-식품안전나라] 상태: {response.status_code}")
+                print(f"[I1250] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[I1250] 응답 상태: {response.status_code}")
+                print(f"[I1250] 응답 본문 (처음 500자): {response.text[:500]}")
 
-            if response.status_code == 200:
-                return self._parse_food_safety_product_response(response.json(), page, per_page)
+                if response.status_code == 200:
+                    return self._parse_food_safety_product_response(response.json(), page, per_page)
+        except Exception as e:
+            print(f"[I1250] 예외 발생: {type(e).__name__}: {e}")
+            raise
         return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     def _filter_companies(
