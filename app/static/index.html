@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>식품 영양정보 검색</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1 class="logo">🍽️ 식품 영양정보 검색</h1>
+            <p class="subtitle">공공데이터포털 API 기반 식품 영양성분 검색 서비스</p>
+        </header>
+
+        <!-- 검색 영역 -->
+        <section class="search-section">
+            <form id="search-form" class="search-form">
+                <div class="search-box">
+                    <input
+                        type="text"
+                        id="search-input"
+                        class="search-input"
+                        placeholder="식품명을 입력하세요 (예: 김치, 라면, 비빔밥)"
+                        autocomplete="off"
+                    >
+                    <button type="submit" class="search-btn">
+                        <span class="search-icon">🔍</span>
+                        검색
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <!-- 검색 결과 영역 -->
+        <section class="results-section">
+            <!-- 검색 상태 -->
+            <div id="search-status" class="search-status hidden"></div>
+
+            <!-- 로딩 인디케이터 -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>검색 중...</p>
+            </div>
+
+            <!-- 결과 목록 -->
+            <div id="results-container" class="results-container"></div>
+
+            <!-- 페이지네이션 -->
+            <div id="pagination" class="pagination hidden"></div>
+        </section>
+
+        <!-- 푸터 -->
+        <footer class="footer">
+            <p>데이터 출처: <a href="https://www.data.go.kr" target="_blank">공공데이터포털</a></p>
+            <p>식품의약품안전처 식품영양성분 데이터베이스</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
