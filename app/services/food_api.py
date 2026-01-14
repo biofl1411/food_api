@@ -221,22 +221,29 @@ class FoodAPIService:
         self, keyword: str, page: int, per_page: int
     ) -> CompanySearchResult:
         """식품안전나라 I1220 업체 검색"""
-        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-            start_idx = (page - 1) * per_page + 1
-            end_idx = start_idx + per_page - 1
+        print(f"[I1220] 호출 시작 - keyword: '{keyword}'")
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+                start_idx = (page - 1) * per_page + 1
+                end_idx = start_idx + per_page - 1
 
-            # URL 형식: /api/키/I1220/json/시작/끝/BSSH_NM=값
-            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1220/json/{start_idx}/{end_idx}"
-            if keyword:
-                # URL 경로에 한글 직접 삽입 시 명시적 인코딩 필요
-                encoded_keyword = urllib.parse.quote(keyword, safe='')
-                url += f"/BSSH_NM={encoded_keyword}"
+                # URL 형식: /api/키/I1220/json/시작/끝/BSSH_NM=값
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1220/json/{start_idx}/{end_idx}"
+                if keyword:
+                    # URL 경로에 한글 직접 삽입 시 명시적 인코딩 필요
+                    encoded_keyword = urllib.parse.quote(keyword, safe='')
+                    url += f"/BSSH_NM={encoded_keyword}"
 
-            response = await client.get(url)
-            print(f"[업체검색-식품안전나라] 상태: {response.status_code}")
+                print(f"[I1220] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[I1220] 응답 상태: {response.status_code}")
+                print(f"[I1220] 응답 본문 (처음 500자): {response.text[:500]}")
 
-            if response.status_code == 200:
-                return self._parse_food_safety_company_response(response.json(), page, per_page)
+                if response.status_code == 200:
+                    return self._parse_food_safety_company_response(response.json(), page, per_page)
+        except Exception as e:
+            print(f"[I1220] 예외 발생: {type(e).__name__}: {e}")
+            raise
         return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     async def _search_health_food_companies(
