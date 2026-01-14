@@ -26,6 +26,9 @@ const elements = {
     modalCompanyName: document.getElementById('modal-company-name'),
     productLoading: document.getElementById('product-loading'),
     productList: document.getElementById('product-list'),
+    // 인허가 변경 이력
+    licenseHistorySection: document.getElementById('license-history-section'),
+    licenseHistoryList: document.getElementById('license-history-list'),
     // 대표자 변경 이력 모달
     repModal: document.getElementById('rep-history-modal'),
     repModalTitle: document.getElementById('rep-modal-title'),
@@ -173,7 +176,7 @@ function displayResults(data) {
             <td class="col-no">${startNo + index + 1}</td>
             <td class="col-license">${escapeHtml(item.license_no || '-')}</td>
             <td class="col-name">
-                <a class="company-link" onclick="showCompanyProducts('${escapeHtml(item.company_name)}')">
+                <a class="company-link" onclick="showCompanyProducts('${escapeHtml(item.company_name)}', '${escapeHtml(item.license_no || '')}')">
                     ${escapeHtml(item.company_name)}
                 </a>
             </td>
@@ -197,32 +200,75 @@ function displayResults(data) {
     elements.resultTbody.innerHTML = html;
 }
 
-// 업체 품목 조회
-async function showCompanyProducts(companyName) {
+// 업체 품목 조회 (인허가 변경 이력 포함)
+async function showCompanyProducts(companyName, licenseNo = '') {
     // 모달 열기
     elements.modal.classList.remove('hidden');
-    elements.modalCompanyName.textContent = companyName + ' - 품목 목록';
+    elements.modalCompanyName.textContent = companyName;
     elements.productLoading.classList.remove('hidden');
     elements.productList.innerHTML = '';
+    elements.licenseHistorySection.classList.add('hidden');
+    elements.licenseHistoryList.innerHTML = '';
 
     try {
-        const response = await fetch(`/api/companies/${encodeURIComponent(companyName)}/products?per_page=50`);
+        // 품목과 인허가 변경 이력을 병렬로 조회
+        const [productsResponse, licenseResponse] = await Promise.all([
+            fetch(`/api/companies/${encodeURIComponent(companyName)}/products?per_page=50`),
+            fetch(`/api/companies/${encodeURIComponent(companyName)}/license-history?license_no=${encodeURIComponent(licenseNo || '')}`)
+        ]);
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        // 인허가 변경 이력 표시
+        if (licenseResponse.ok) {
+            const licenseData = await licenseResponse.json();
+            if (licenseData.items && licenseData.items.length > 0) {
+                displayLicenseHistory(licenseData.items);
+                elements.licenseHistorySection.classList.remove('hidden');
+            }
         }
 
-        const data = await response.json();
-        displayProducts(data.items);
+        // 품목 표시
+        if (!productsResponse.ok) {
+            throw new Error(`HTTP error! status: ${productsResponse.status}`);
+        }
+
+        const productsData = await productsResponse.json();
+        displayProducts(productsData.items);
 
     } catch (error) {
-        console.error('품목 조회 오류:', error);
+        console.error('조회 오류:', error);
         elements.productList.innerHTML = `
-            <div class="no-products">품목 조회 중 오류가 발생했습니다.</div>
+            <div class="no-products">조회 중 오류가 발생했습니다.</div>
         `;
     } finally {
         elements.productLoading.classList.add('hidden');
     }
+}
+
+// 인허가 변경 이력 표시
+function displayLicenseHistory(items) {
+    const html = items.slice(0, 5).map(item => `
+        <div class="license-history-item">
+            <div class="license-change-date">${escapeHtml(item.change_date || '-')}</div>
+            <div class="license-change-content">
+                <div class="change-detail">
+                    <span class="change-label">변경 전:</span>
+                    <span class="change-value">${escapeHtml(item.before_content || '-')}</span>
+                </div>
+                <div class="change-detail">
+                    <span class="change-label">변경 후:</span>
+                    <span class="change-value">${escapeHtml(item.after_content || '-')}</span>
+                </div>
+                ${item.change_reason ? `
+                <div class="change-detail">
+                    <span class="change-label">변경 사유:</span>
+                    <span class="change-value">${escapeHtml(item.change_reason)}</span>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `).join('');
+
+    elements.licenseHistoryList.innerHTML = html;
 }
 
 // 품목 목록 표시

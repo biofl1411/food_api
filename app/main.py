@@ -12,6 +12,7 @@ from app.services.food_api import (
     FoodSearchResult,
     CompanySearchResult,
     RepHistoryResult,
+    LicenseChangeResult,
     get_regions,
     get_business_types
 )
@@ -102,6 +103,24 @@ async def get_representative_history(
     - **license_no**: 인허가번호 (선택)
     """
     result = await food_api_service.get_representative_history(
+        company_name=company_name,
+        license_no=license_no
+    )
+    return result
+
+
+@app.get("/api/companies/{company_name}/license-history", response_model=LicenseChangeResult)
+async def get_license_change_history(
+    company_name: str,
+    license_no: str = Query("", description="인허가번호")
+):
+    """
+    인허가 변경 이력 조회 API (I2859)
+
+    - **company_name**: 업체명
+    - **license_no**: 인허가번호 (선택)
+    """
+    result = await food_api_service.get_license_change_history(
         company_name=company_name,
         license_no=license_no
     )

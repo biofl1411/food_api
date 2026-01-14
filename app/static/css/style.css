@@ -434,6 +434,68 @@ body {
     color: var(--text-secondary);
 }
 
+/* 섹션 타이틀 */
+.section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+/* 인허가 변경 이력 */
+.license-history-section {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.license-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.license-history-item {
+    display: flex;
+    gap: 15px;
+    padding: 12px 15px;
+    background: #fff8e1;
+    border-radius: 6px;
+    border-left: 4px solid #f59e0b;
+}
+
+.license-change-date {
+    min-width: 90px;
+    font-weight: 600;
+    color: #b45309;
+    font-size: 13px;
+}
+
+.license-change-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.change-detail {
+    display: flex;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.change-label {
+    color: var(--text-secondary);
+    min-width: 60px;
+    flex-shrink: 0;
+}
+
+.change-value {
+    color: var(--text-primary);
+}
+
 /* 대표자 변경 이력 */
 .rep-history-list {
     display: flex;

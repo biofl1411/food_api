@@ -125,6 +125,26 @@ class RepHistoryResult(BaseModel):
     items: list[RepHistoryItem]
 
 
+class LicenseChangeItem(BaseModel):
+    """인허가 변경 이력 항목 모델"""
+    company_name: str = ""
+    business_type: str = ""
+    license_no: str = ""
+    phone: str = ""
+    address: str = ""
+    change_date: str = ""
+    before_content: str = ""
+    after_content: str = ""
+    change_reason: str = ""
+
+
+class LicenseChangeResult(BaseModel):
+    """인허가 변경 이력 결과 모델"""
+    company_name: str
+    total_count: int
+    items: list[LicenseChangeItem]
+
+
 class FoodAPIService:
     """통합 식품 API 서비스 (공공데이터포털 + 식품안전나라)"""
 
@@ -153,6 +173,11 @@ class FoodAPIService:
             "name": "축산물가공업허가정보",
             "service_id": "I1300",
             "description": "축산 업체 정보 조회"
+        },
+        "I2859": {
+            "name": "식품업소 인허가 변경 정보",
+            "service_id": "I2859",
+            "description": "식품 업소 인허가 변경 이력 조회"
         },
         "I2860": {
             "name": "건강기능식품업소 인허가 변경 정보",
@@ -462,6 +487,101 @@ class FoodAPIService:
 
         # 3차: 샘플 대표자 이력 반환
         return self._get_sample_rep_history(company_name)
+
+    async def get_license_change_history(
+        self,
+        company_name: str,
+        license_no: str = ""
+    ) -> LicenseChangeResult:
+        """인허가 변경 이력 조회 (I2859 식품업소 인허가 변경 정보 API)"""
+        print(f"[인허가변경] 조회 시작 - company: '{company_name}', license: '{license_no}'")
+
+        if self.food_safety_api_key:
+            try:
+                result = await self._get_license_change_i2859(company_name, license_no)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[인허가변경] I2859 오류: {e}")
+
+        # 빈 결과 반환
+        return LicenseChangeResult(company_name=company_name, total_count=0, items=[])
+
+    async def _get_license_change_i2859(
+        self, company_name: str, license_no: str
+    ) -> LicenseChangeResult:
+        """식품안전나라 I2859 식품업소 인허가 변경 정보 조회"""
+        print(f"[I2859] 호출 - company: '{company_name}', license: '{license_no}'")
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+                # URL 형식: /api/키/I2859/json/시작/끝/BSSH_NM=값&LCNS_NO=값
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2859/json/1/100"
+
+                # 검색 조건 추가
+                params = []
+                if license_no:
+                    encoded_license = urllib.parse.quote(license_no, safe='')
+                    params.append(f"LCNS_NO={encoded_license}")
+                if company_name:
+                    encoded_company = urllib.parse.quote(company_name, safe='')
+                    params.append(f"BSSH_NM={encoded_company}")
+
+                if params:
+                    url += "/" + "&".join(params)
+
+                print(f"[I2859] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[I2859] 응답 상태: {response.status_code}")
+                print(f"[I2859] 응답 본문 (처음 500자): {response.text[:500]}")
+
+                if response.status_code == 200:
+                    return self._parse_license_change_i2859(response.json(), company_name)
+        except Exception as e:
+            print(f"[I2859] 예외: {type(e).__name__}: {e}")
+            raise
+        return LicenseChangeResult(company_name=company_name, total_count=0, items=[])
+
+    def _parse_license_change_i2859(
+        self, data: dict, company_name: str
+    ) -> LicenseChangeResult:
+        """I2859 인허가 변경 이력 응답 파싱"""
+        try:
+            service_data = data.get("I2859", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return LicenseChangeResult(company_name=company_name, total_count=0, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                change_item = LicenseChangeItem(
+                    company_name=item.get("BSSH_NM", ""),
+                    business_type=item.get("INDUTY_CD_NM", ""),
+                    license_no=item.get("LCNS_NO", ""),
+                    phone=item.get("TELNO", ""),
+                    address=item.get("SITE_ADDR", ""),
+                    change_date=item.get("CHNG_DT", ""),
+                    before_content=item.get("CHNG_BF_CN", ""),
+                    after_content=item.get("CHNG_AF_CN", ""),
+                    change_reason=item.get("CHNG_PRVNS", "")
+                )
+                items.append(change_item)
+
+            # 변경일 기준 정렬 (최신순)
+            items.sort(key=lambda x: x.change_date or "", reverse=True)
+
+            return LicenseChangeResult(
+                company_name=company_name,
+                total_count=total_count,
+                items=items
+            )
+        except Exception as e:
+            print(f"[I2859] 파싱 오류: {e}")
+            return LicenseChangeResult(company_name=company_name, total_count=0, items=[])
 
     async def _get_rep_history_i2860(
         self, company_name: str, license_no: str
