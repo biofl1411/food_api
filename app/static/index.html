@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>업체 검색 - 식품안전정보</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1 class="logo">🏭 업체 검색</h1>
+            <p class="subtitle">공공데이터포털 API 기반 식품 업체 및 품목 검색 서비스</p>
+        </header>
+
+        <!-- 검색 필터 영역 -->
+        <section class="search-section">
+            <div class="search-filters">
+                <!-- 업종 선택 -->
+                <div class="filter-row">
+                    <div class="filter-group business-types">
+                        <label class="filter-label">업종</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-item active" data-value="">
+                                <input type="radio" name="business_type" value="" checked> 전체
+                            </label>
+                            <label class="checkbox-item" data-value="식품">
+                                <input type="radio" name="business_type" value="식품"> 식품
+                            </label>
+                            <label class="checkbox-item" data-value="건강기능식품">
+                                <input type="radio" name="business_type" value="건강기능식품"> 건강기능식품
+                            </label>
+                            <label class="checkbox-item" data-value="축산">
+                                <input type="radio" name="business_type" value="축산"> 축산
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 지역 선택 -->
+                <div class="filter-row">
+                    <div class="filter-group regions">
+                        <label class="filter-label">지역</label>
+                        <div class="checkbox-group region-checkboxes">
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="서울"> 서울특별시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="부산"> 부산광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="대구"> 대구광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="인천"> 인천광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="광주"> 광주광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="대전"> 대전광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="울산"> 울산광역시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="세종"> 세종특별자치시
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="경기"> 경기도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="강원"> 강원특별자치도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="충북"> 충청북도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="충남"> 충청남도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="전북"> 전북특별자치도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="전남"> 전라남도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="경북"> 경상북도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="경남"> 경상남도
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="region" value="제주"> 제주특별자치도
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 업체명 검색 -->
+                <div class="filter-row search-row">
+                    <div class="filter-group">
+                        <label class="filter-label">업체명</label>
+                        <input type="text" id="company-keyword" class="filter-input" placeholder="업체명의 일부분(2~3글자)만 입력">
+                    </div>
+                    <button type="button" id="search-btn" class="search-btn">검색</button>
+                </div>
+
+                <p class="search-tip">※ 업체명이 조회가 안 될 경우, 업체명의 일부분(2~3글자)만 입력 후 조회하시기 바랍니다.</p>
+            </div>
+        </section>
+
+        <!-- 검색 결과 영역 -->
+        <section class="results-section">
+            <!-- 검색 상태 -->
+            <div id="search-status" class="search-status">
+                <span>총 <strong id="total-count">0</strong>건이 검색되었습니다</span>
+                <div class="result-options">
+                    <select id="per-page-select" class="per-page-select">
+                        <option value="10">10개씩</option>
+                        <option value="20">20개씩</option>
+                        <option value="50">50개씩</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 로딩 인디케이터 -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>검색 중...</p>
+            </div>
+
+            <!-- 결과 테이블 -->
+            <div class="table-container">
+                <table class="result-table" id="result-table">
+                    <thead>
+                        <tr>
+                            <th class="col-no">번호</th>
+                            <th class="col-license">인허가번호</th>
+                            <th class="col-name">업체명</th>
+                            <th class="col-type">업종</th>
+                            <th class="col-address">소재지</th>
+                            <th class="col-status">영업상태</th>
+                        </tr>
+                    </thead>
+                    <tbody id="result-tbody">
+                        <tr class="empty-row">
+                            <td colspan="6">조회된 데이터가 없습니다.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 페이지네이션 -->
+            <div id="pagination" class="pagination hidden"></div>
+        </section>
+
+        <!-- 품목 모달 -->
+        <div id="product-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modal-company-name">업체명</h2>
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="product-loading" class="loading">
+                        <div class="spinner"></div>
+                        <p>품목 조회 중...</p>
+                    </div>
+                    <div id="product-list" class="product-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 푸터 -->
+        <footer class="footer">
+            <p>데이터 출처: <a href="https://www.data.go.kr" target="_blank">공공데이터포털</a></p>
+            <p>식품의약품안전처 식품품목제조보고 데이터베이스</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js?v=2"></script>
+</body>
+</html>

@@ -1,0 +1,913 @@
+"""
+공공데이터포털 + 식품안전나라 통합 식품 API 서비스
+- 공공데이터포털: 식품(첨가물)품목제조보고 API
+- 식품안전나라: I1220(식품제조가공업정보), I1250(식품품목제조보고)
+- 폴백 구조: 공공데이터포털 실패 시 식품안전나라 API 사용
+"""
+import os
+import httpx
+from typing import Optional
+from pydantic import BaseModel
+
+
+# 지역 코드 매핑
+REGION_CODES = {
+    "전체": "",
+    "서울특별시": "서울",
+    "부산광역시": "부산",
+    "대구광역시": "대구",
+    "인천광역시": "인천",
+    "광주광역시": "광주",
+    "대전광역시": "대전",
+    "울산광역시": "울산",
+    "세종특별자치시": "세종",
+    "경기도": "경기",
+    "강원특별자치도": "강원",
+    "충청북도": "충북",
+    "충청남도": "충남",
+    "전북특별자치도": "전북",
+    "전라남도": "전남",
+    "경상북도": "경북",
+    "경상남도": "경남",
+    "제주특별자치도": "제주"
+}
+
+# 업종 코드 매핑
+BUSINESS_TYPES = {
+    "전체": "",
+    "식품": "식품",
+    "건강기능식품": "건강기능식품",
+    "축산": "축산",
+    "음식점": "음식점"
+}
+
+
+class FoodItem(BaseModel):
+    """식품 정보 모델 (상세 정보 포함)"""
+    food_name: str
+    food_code: Optional[str] = None
+    category: Optional[str] = None
+    serving_size: Optional[str] = None
+    calories: Optional[float] = None
+    carbohydrate: Optional[float] = None
+    protein: Optional[float] = None
+    fat: Optional[float] = None
+    sugar: Optional[float] = None
+    sodium: Optional[float] = None
+    manufacturer: Optional[str] = None
+    report_no: Optional[str] = None
+    raw_materials: Optional[str] = None
+    # 상세 정보 (식품안전나라 I1250)
+    license_no: Optional[str] = None  # 인허가번호
+    permit_date: Optional[str] = None  # 허가일자
+    expiry_date: Optional[str] = None  # 소비기한
+    shelf_life_days: Optional[str] = None  # 품질유지기한일수
+    usage: Optional[str] = None  # 용법
+    purpose: Optional[str] = None  # 용도
+    product_form: Optional[str] = None  # 제품형태
+    packaging: Optional[str] = None  # 포장재질
+    production_status: Optional[str] = None  # 생산종료여부
+    high_calorie_food: Optional[str] = None  # 고열량저영양식품여부
+    child_certified: Optional[str] = None  # 어린이기호식품품질인증여부
+    last_update: Optional[str] = None  # 최종수정일자
+    api_source: Optional[str] = None
+
+
+class CompanyItem(BaseModel):
+    """업체 정보 모델 (상세 정보 포함)"""
+    company_name: str
+    license_no: Optional[str] = None
+    business_type: Optional[str] = None
+    representative: Optional[str] = None
+    address: Optional[str] = None
+    region: Optional[str] = None
+    status: Optional[str] = None
+    license_date: Optional[str] = None
+    # 상세 정보 (식품안전나라 I1220)
+    phone: Optional[str] = None  # 전화번호
+    institution: Optional[str] = None  # 기관명
+    api_source: Optional[str] = None
+
+
+class FoodSearchResult(BaseModel):
+    """식품 검색 결과 모델"""
+    total_count: int
+    page: int
+    per_page: int
+    items: list[FoodItem]
+
+
+class CompanySearchResult(BaseModel):
+    """업체 검색 결과 모델"""
+    total_count: int
+    page: int
+    per_page: int
+    items: list[CompanyItem]
+
+
+class FoodAPIService:
+    """통합 식품 API 서비스 (공공데이터포털 + 식품안전나라)"""
+
+    # 공공데이터포털 API
+    DATA_GO_KR_APIS = {
+        "food_product": {
+            "name": "식품품목제조보고",
+            "base_url": "http://apis.data.go.kr/1471000/FoodFlshdAddtvrptInfoService",
+            "endpoint": "/getFoodFlshdAddtvrptInfoList",
+        }
+    }
+
+    # 식품안전나라 API (폴백용)
+    FOOD_SAFETY_APIS = {
+        "I1220": {
+            "name": "식품제조가공업정보",
+            "service_id": "I1220",
+            "description": "업체 정보 조회"
+        },
+        "I1250": {
+            "name": "식품품목제조보고",
+            "service_id": "I1250",
+            "description": "품목 상세 정보 조회"
+        },
+        "I2860": {
+            "name": "건강기능식품업소 인허가 변경 정보",
+            "service_id": "I2860",
+            "description": "건강기능식품 업체 정보 조회"
+        }
+    }
+
+    FOOD_SAFETY_BASE_URL = "http://openapi.foodsafetykorea.go.kr/api"
+
+    def __init__(self):
+        # 공공데이터포털 API 키
+        self.api_key_1 = os.getenv("PUBLIC_DATA_API_KEY", "")
+        # 식품안전나라 API 키
+        self.food_safety_api_key = os.getenv("FOOD_SAFETY_API_KEY", "")
+        # API 타임아웃 (초) - 빠른 폴백을 위해 짧게 설정
+        self.api_timeout = 5.0
+
+    async def search_companies(
+        self,
+        keyword: str = "",
+        region: str = "",
+        business_type: str = "",
+        page: int = 1,
+        per_page: int = 10
+    ) -> CompanySearchResult:
+        """업체 검색 (업종별 API 선택 + 폴백 구조)"""
+
+        # 건강기능식품 업종인 경우 I2860 API 우선 사용
+        if business_type == "건강기능식품" and self.food_safety_api_key:
+            try:
+                result = await self._search_health_food_companies(keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return self._filter_companies(result, region, business_type)
+            except Exception as e:
+                print(f"[건강기능식품 업체검색] 오류: {e}")
+
+        # 1차: 공공데이터포털 API 시도
+        if self.api_key_1:
+            try:
+                result = await self._search_companies_data_go_kr(keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return self._filter_companies(result, region, business_type)
+            except Exception as e:
+                print(f"[업체검색] 공공데이터포털 오류: {e}")
+
+        # 2차: 식품안전나라 I1220 API 폴백
+        if self.food_safety_api_key:
+            try:
+                result = await self._search_companies_food_safety(keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return self._filter_companies(result, region, business_type)
+            except Exception as e:
+                print(f"[업체검색] 식품안전나라 오류: {e}")
+
+        # 3차: 샘플 데이터 반환
+        return self._get_sample_companies(keyword, region, business_type, page, per_page)
+
+    async def _search_companies_data_go_kr(
+        self, keyword: str, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """공공데이터포털 업체 검색"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            params = {
+                "serviceKey": self.api_key_1,
+                "pageNo": str(page),
+                "numOfRows": str(per_page * 5),
+                "type": "json"
+            }
+            if keyword:
+                params["BSSH_NM"] = keyword
+
+            api_info = self.DATA_GO_KR_APIS["food_product"]
+            url = f"{api_info['base_url']}{api_info['endpoint']}"
+            response = await client.get(url, params=params)
+            print(f"[업체검색-공공데이터] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_company_response(response.json(), page, per_page)
+        return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def _search_companies_food_safety(
+        self, keyword: str, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I1220 업체 검색"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            start_idx = (page - 1) * per_page + 1
+            end_idx = start_idx + per_page - 1
+
+            # URL 형식: /api/키/I1220/json/시작/끝/BSSH_NM=값
+            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1220/json/{start_idx}/{end_idx}"
+            if keyword:
+                url += f"/BSSH_NM={keyword}"
+
+            response = await client.get(url)
+            print(f"[업체검색-식품안전나라] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_food_safety_company_response(response.json(), page, per_page)
+        return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def _search_health_food_companies(
+        self, keyword: str, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I2860 건강기능식품 업체 검색"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            start_idx = (page - 1) * per_page + 1
+            end_idx = start_idx + per_page - 1
+
+            # URL 형식: /api/키/I2860/json/시작/끝/BSSH_NM=값
+            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}"
+            if keyword:
+                url += f"/BSSH_NM={keyword}"
+
+            response = await client.get(url)
+            print(f"[건강기능식품 업체검색] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_health_food_company_response(response.json(), page, per_page)
+        return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def search_products_by_company(
+        self,
+        company_name: str,
+        page: int = 1,
+        per_page: int = 20
+    ) -> FoodSearchResult:
+        """업체별 품목 검색 (공공데이터포털 → 식품안전나라 I1250 폴백)"""
+
+        # 1차: 공공데이터포털 API 시도
+        if self.api_key_1:
+            try:
+                result = await self._search_products_data_go_kr(company_name, "", page, per_page)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[품목검색] 공공데이터포털 오류: {e}")
+
+        # 2차: 식품안전나라 I1250 API 폴백
+        if self.food_safety_api_key:
+            try:
+                result = await self._search_products_food_safety(company_name, "", page, per_page)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[품목검색] 식품안전나라 오류: {e}")
+
+        # 3차: 샘플 데이터 반환
+        return self._get_sample_products_by_company(company_name, page, per_page)
+
+    async def search_foods(
+        self,
+        keyword: str,
+        page: int = 1,
+        per_page: int = 10
+    ) -> FoodSearchResult:
+        """제품명으로 식품 검색 (공공데이터포털 → 식품안전나라 I1250 폴백)"""
+
+        # 1차: 공공데이터포털 API 시도
+        if self.api_key_1:
+            try:
+                result = await self._search_products_data_go_kr("", keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[식품검색] 공공데이터포털 오류: {e}")
+
+        # 2차: 식품안전나라 I1250 API 폴백
+        if self.food_safety_api_key:
+            try:
+                result = await self._search_products_food_safety("", keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[식품검색] 식품안전나라 오류: {e}")
+
+        # 3차: 샘플 데이터 반환
+        return self._get_sample_foods(keyword, page, per_page)
+
+    async def _search_products_data_go_kr(
+        self, company_name: str, product_name: str, page: int, per_page: int
+    ) -> FoodSearchResult:
+        """공공데이터포털 품목 검색"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            params = {
+                "serviceKey": self.api_key_1,
+                "pageNo": str(page),
+                "numOfRows": str(per_page),
+                "type": "json"
+            }
+            if company_name:
+                params["BSSH_NM"] = company_name
+            if product_name:
+                params["PRDLST_NM"] = product_name
+
+            api_info = self.DATA_GO_KR_APIS["food_product"]
+            url = f"{api_info['base_url']}{api_info['endpoint']}"
+            response = await client.get(url, params=params)
+            print(f"[품목검색-공공데이터] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_food_product_response(response.json(), page, per_page)
+        return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def _search_products_food_safety(
+        self, company_name: str, product_name: str, page: int, per_page: int
+    ) -> FoodSearchResult:
+        """식품안전나라 I1250 품목 검색 (상세 정보 포함)"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            start_idx = (page - 1) * per_page + 1
+            end_idx = start_idx + per_page - 1
+
+            # URL 형식: /api/키/I1250/json/시작/끝
+            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1250/json/{start_idx}/{end_idx}"
+
+            # 검색 조건 추가
+            params = []
+            if company_name:
+                params.append(f"BSSH_NM={company_name}")
+            if product_name:
+                params.append(f"PRDLST_NM={product_name}")
+            if params:
+                url += "/" + "&".join(params)
+
+            response = await client.get(url)
+            print(f"[품목검색-식품안전나라] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_food_safety_product_response(response.json(), page, per_page)
+        return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _filter_companies(
+        self,
+        result: CompanySearchResult,
+        region: str,
+        business_type: str
+    ) -> CompanySearchResult:
+        """업체 결과 필터링"""
+        items = result.items
+
+        # 지역 필터 (콤마로 구분된 여러 지역)
+        if region:
+            regions = [r.strip() for r in region.split(',') if r.strip()]
+            if regions:
+                items = [
+                    c for c in items
+                    if any(r in (c.address or "") or r in (c.region or "") for r in regions)
+                ]
+
+        # 업종 필터
+        if business_type:
+            items = [
+                c for c in items
+                if business_type.lower() in (c.business_type or "").lower()
+            ]
+
+        return CompanySearchResult(
+            total_count=len(items),
+            page=result.page,
+            per_page=result.per_page,
+            items=items
+        )
+
+    def _parse_company_response(
+        self,
+        data: dict,
+        page: int,
+        per_page: int
+    ) -> CompanySearchResult:
+        """업체 API 응답 파싱"""
+        try:
+            body = data.get("body", {})
+            total_count = body.get("totalCount", 0)
+            items_data = body.get("items", [])
+
+            if not items_data:
+                return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            # 업체명으로 그룹화 (중복 제거)
+            companies_dict = {}
+            for item in items_data:
+                company_name = item.get("BSSH_NM", "")
+                if company_name and company_name not in companies_dict:
+                    companies_dict[company_name] = CompanyItem(
+                        company_name=company_name,
+                        license_no=item.get("PRDLST_REPORT_NO", ""),
+                        business_type=item.get("PRDLST_DCNM", "식품"),
+                        address=item.get("ADDR", "") or item.get("SITE_ADDR", ""),
+                        status="운영",
+                        api_source="공공데이터"
+                    )
+
+            items = list(companies_dict.values())
+
+            return CompanySearchResult(
+                total_count=len(items),
+                page=page,
+                per_page=per_page,
+                items=items[:per_page]
+            )
+        except Exception as e:
+            print(f"[업체] 파싱 오류: {e}")
+            return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_food_product_response(
+        self,
+        data: dict,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """식품품목제조보고 API 응답 파싱"""
+        try:
+            body = data.get("body", {})
+            total_count = body.get("totalCount", 0)
+            items_data = body.get("items", [])
+
+            if not items_data:
+                return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                food_item = FoodItem(
+                    food_name=item.get("PRDLST_NM", ""),
+                    food_code=item.get("PRDLST_REPORT_NO", ""),
+                    category=item.get("PRDT_SHAP_CD_NM", "") or item.get("PRDLST_DCNM", ""),
+                    serving_size=item.get("CSTDY_MTHD", ""),
+                    manufacturer=item.get("BSSH_NM", ""),
+                    report_no=item.get("PRDLST_REPORT_NO", ""),
+                    raw_materials=item.get("RAWMTRL_NM", ""),
+                    api_source="공공데이터"
+                )
+                items.append(food_item)
+
+            return FoodSearchResult(
+                total_count=total_count,
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[식품품목] 파싱 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _safe_float(self, value) -> Optional[float]:
+        """안전한 float 변환"""
+        if value is None or value == "":
+            return None
+        try:
+            cleaned = ''.join(c for c in str(value) if c.isdigit() or c == '.')
+            return float(cleaned) if cleaned else None
+        except (ValueError, TypeError):
+            return None
+
+    def _parse_food_safety_company_response(
+        self, data: dict, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I1220 업체 응답 파싱 (상세 정보 포함)"""
+        try:
+            # 식품안전나라 응답 구조: {서비스명: {row: [...], total_count: ...}}
+            service_data = data.get("I1220", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                company = CompanyItem(
+                    company_name=item.get("BSSH_NM", ""),
+                    license_no=item.get("LCNS_NO", ""),
+                    business_type=item.get("INDUTY_NM", ""),
+                    representative=item.get("PRSDNT_NM", ""),
+                    address=item.get("LOCP_ADDR", ""),
+                    license_date=item.get("PRMS_DT", ""),
+                    phone=item.get("TELNO", ""),
+                    institution=item.get("INSTT_NM", ""),
+                    status="운영",
+                    api_source="식품안전나라"
+                )
+                items.append(company)
+
+            return CompanySearchResult(
+                total_count=total_count,
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[식품안전나라-업체] 파싱 오류: {e}")
+            return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_health_food_company_response(
+        self, data: dict, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I2860 건강기능식품 업체 응답 파싱"""
+        try:
+            # 식품안전나라 응답 구조: {서비스명: {row: [...], total_count: ...}}
+            service_data = data.get("I2860", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            # 업체명으로 중복 제거
+            companies_dict = {}
+            for item in items_data:
+                company_name = item.get("BSSH_NM", "")
+                if company_name and company_name not in companies_dict:
+                    companies_dict[company_name] = CompanyItem(
+                        company_name=company_name,
+                        license_no=item.get("LCNS_NO", ""),
+                        business_type=item.get("INDUTY_CD_NM", "건강기능식품"),
+                        address=item.get("SITE_ADDR", ""),
+                        phone=item.get("TELNO", ""),
+                        status="운영",
+                        api_source="식품안전나라"
+                    )
+
+            items = list(companies_dict.values())
+
+            return CompanySearchResult(
+                total_count=len(items),
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[건강기능식품-업체] 파싱 오류: {e}")
+            return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_food_safety_product_response(
+        self, data: dict, page: int, per_page: int
+    ) -> FoodSearchResult:
+        """식품안전나라 I1250 품목 응답 파싱 (상세 정보 포함)"""
+        try:
+            # 식품안전나라 응답 구조: {서비스명: {row: [...], total_count: ...}}
+            service_data = data.get("I1250", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                food = FoodItem(
+                    food_name=item.get("PRDLST_NM", ""),
+                    food_code=item.get("PRDLST_REPORT_NO", ""),
+                    category=item.get("PRDLST_DCNM", ""),
+                    manufacturer=item.get("BSSH_NM", ""),
+                    report_no=item.get("PRDLST_REPORT_NO", ""),
+                    # 상세 정보
+                    license_no=item.get("LCNS_NO", ""),
+                    permit_date=item.get("PRMS_DT", ""),
+                    expiry_date=item.get("POG_DAYCNT", ""),
+                    shelf_life_days=item.get("QLITY_MNTNC_TMLMT_DAYCNT", ""),
+                    usage=item.get("USAGE", ""),
+                    purpose=item.get("PRPOS", ""),
+                    product_form=item.get("DISPOS", ""),
+                    packaging=item.get("FRMLC_MTRQLT", ""),
+                    production_status=item.get("PRODUCTION", ""),
+                    high_calorie_food=item.get("HIENG_LNTRT_DVS_NM", ""),
+                    child_certified=item.get("CHILD_CRTFC_YN", ""),
+                    last_update=item.get("LAST_UPDT_DTM", ""),
+                    api_source="식품안전나라"
+                )
+                items.append(food)
+
+            return FoodSearchResult(
+                total_count=total_count,
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[식품안전나라-품목] 파싱 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _get_sample_companies(
+        self,
+        keyword: str,
+        region: str,
+        business_type: str,
+        page: int,
+        per_page: int
+    ) -> CompanySearchResult:
+        """샘플 업체 데이터 (확장)"""
+        sample_companies = [
+            # 서울
+            CompanyItem(company_name="삼양식품(주)", license_no="19670001", business_type="식품",
+                       address="서울특별시 성북구 삼양로 123", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="농심(주)", license_no="19680002", business_type="식품",
+                       address="서울특별시 동작구 신대방동 456", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="CJ제일제당(주)", license_no="19530004", business_type="식품",
+                       address="서울특별시 중구 을지로 123", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="대상(주)", license_no="19560005", business_type="식품",
+                       address="서울특별시 종로구 종로 456", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="풀무원식품(주)", license_no="19840006", business_type="식품",
+                       address="서울특별시 강남구 테헤란로 789", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="롯데제과(주)", license_no="19670008", business_type="식품",
+                       address="서울특별시 영등포구 양평동 111", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="해태제과(주)", license_no="19680010", business_type="식품",
+                       address="서울특별시 용산구 한강로 222", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="동서식품(주)", license_no="19680011", business_type="식품",
+                       address="서울특별시 강남구 삼성동 333", region="서울", status="운영", api_source="샘플"),
+            # 경기
+            CompanyItem(company_name="오뚜기(주)", license_no="19690003", business_type="식품",
+                       address="경기도 안양시 동안구 평촌동 123", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="빙그레(주)", license_no="19670007", business_type="식품",
+                       address="경기도 남양주시 진접읍 456", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="매일유업(주)", license_no="19690012", business_type="식품",
+                       address="경기도 용인시 기흥구 789", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="남양유업(주)", license_no="19640013", business_type="식품",
+                       address="경기도 세종시 세종로 111", region="경기", status="운영", api_source="샘플"),
+            # 축산
+            CompanyItem(company_name="하림(주)", license_no="19860014", business_type="축산",
+                       address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="마니커(주)", license_no="19920201", business_type="축산",
+                       address="충청남도 천안시 동남구 123", region="충남", status="운영", api_source="샘플"),
+            CompanyItem(company_name="선진(주)", license_no="19800202", business_type="축산",
+                       address="경기도 파주시 문산읍 456", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="목우촌(주)", license_no="19840203", business_type="축산",
+                       address="경상북도 영천시 북안면 789", region="경북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="도드람푸드(주)", license_no="19950204", business_type="축산",
+                       address="경기도 안성시 미양면 111", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="체리부로(주)", license_no="19850205", business_type="축산",
+                       address="충청북도 음성군 대소면 222", region="충북", status="운영", api_source="샘플"),
+            CompanyItem(company_name="사조팜스(주)", license_no="19900206", business_type="축산",
+                       address="경상북도 상주시 함창읍 333", region="경북", status="운영", api_source="샘플"),
+            # 부산
+            CompanyItem(company_name="삼진어묵(주)", license_no="19530020", business_type="식품",
+                       address="부산광역시 영도구 봉래동 123", region="부산", status="운영", api_source="샘플"),
+            CompanyItem(company_name="동원F&B(주) 부산공장", license_no="19690021", business_type="식품",
+                       address="부산광역시 사하구 장림동 456", region="부산", status="운영", api_source="샘플"),
+            # 대구
+            CompanyItem(company_name="팔도(주)", license_no="19830030", business_type="식품",
+                       address="대구광역시 달성군 다사읍 123", region="대구", status="운영", api_source="샘플"),
+            # 충북
+            CompanyItem(company_name="청정원(주)", license_no="19870040", business_type="식품",
+                       address="충청북도 청주시 흥덕구 123", region="충북", status="운영", api_source="샘플"),
+            # 충남
+            CompanyItem(company_name="사조대림(주)", license_no="19710041", business_type="식품",
+                       address="충청남도 아산시 배방읍 456", region="충남", status="운영", api_source="샘플"),
+            # 전북
+            CompanyItem(company_name="동원F&B(주)", license_no="19690050", business_type="식품",
+                       address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
+            # 경북
+            CompanyItem(company_name="정식품(주)", license_no="19730060", business_type="식품",
+                       address="경상북도 칠곡군 지천면 123", region="경북", status="운영", api_source="샘플"),
+            # 경남
+            CompanyItem(company_name="사조해표(주)", license_no="19720070", business_type="식품",
+                       address="경상남도 창원시 마산회원구 456", region="경남", status="운영", api_source="샘플"),
+            # 건강기능식품
+            CompanyItem(company_name="한국야쿠르트(주)", license_no="19710100", business_type="건강기능식품",
+                       address="서울특별시 서초구 서초동 123", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="종근당건강(주)", license_no="19830101", business_type="건강기능식품",
+                       address="서울특별시 강동구 성내동 456", region="서울", status="운영", api_source="샘플"),
+            CompanyItem(company_name="뉴트리(주)", license_no="20000102", business_type="건강기능식품",
+                       address="경기도 성남시 분당구 789", region="경기", status="운영", api_source="샘플"),
+            CompanyItem(company_name="고려은단(주)", license_no="19730103", business_type="건강기능식품",
+                       address="서울특별시 강남구 역삼동 111", region="서울", status="운영", api_source="샘플"),
+        ]
+
+        # 필터링
+        filtered = sample_companies
+
+        # 키워드 필터
+        if keyword:
+            filtered = [c for c in filtered if keyword.lower() in c.company_name.lower()]
+
+        # 지역 필터 (콤마로 구분된 여러 지역)
+        if region:
+            regions = [r.strip() for r in region.split(',') if r.strip()]
+            if regions:
+                filtered = [
+                    c for c in filtered
+                    if any(r in (c.address or "") or r in (c.region or "") for r in regions)
+                ]
+
+        # 업종 필터
+        if business_type:
+            filtered = [
+                c for c in filtered
+                if business_type.lower() in (c.business_type or "").lower()
+            ]
+
+        # 페이지네이션
+        total = len(filtered)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated = filtered[start_idx:end_idx]
+
+        return CompanySearchResult(
+            total_count=total,
+            page=page,
+            per_page=per_page,
+            items=paginated
+        )
+
+    def _get_sample_products_by_company(
+        self,
+        company_name: str,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """샘플 업체별 품목 데이터 (확장)"""
+        sample_products = {
+            "농심(주)": [
+                FoodItem(food_name="신라면", category="라면", manufacturer="농심(주)", report_no="NM001", raw_materials="밀가루, 팜유, 전분, 고춧가루", api_source="샘플"),
+                FoodItem(food_name="안성탕면", category="라면", manufacturer="농심(주)", report_no="NM002", raw_materials="밀가루, 팜유, 된장분말", api_source="샘플"),
+                FoodItem(food_name="짜파게티", category="라면", manufacturer="농심(주)", report_no="NM003", raw_materials="밀가루, 팜유, 춘장분말", api_source="샘플"),
+                FoodItem(food_name="너구리", category="라면", manufacturer="농심(주)", report_no="NM004", raw_materials="밀가루, 팜유, 다시마", api_source="샘플"),
+                FoodItem(food_name="새우깡", category="스낵", manufacturer="농심(주)", report_no="NM005", raw_materials="밀가루, 새우분말, 팜유", api_source="샘플"),
+                FoodItem(food_name="양파링", category="스낵", manufacturer="농심(주)", report_no="NM006", raw_materials="밀가루, 양파분말, 팜유", api_source="샘플"),
+                FoodItem(food_name="포테토칩 오리지널", category="스낵", manufacturer="농심(주)", report_no="NM007", raw_materials="감자, 팜유, 소금", api_source="샘플"),
+            ],
+            "삼양식품(주)": [
+                FoodItem(food_name="삼양라면", category="라면", manufacturer="삼양식품(주)", report_no="SY001", raw_materials="밀가루, 팜유, 소금", api_source="샘플"),
+                FoodItem(food_name="불닭볶음면", category="라면", manufacturer="삼양식품(주)", report_no="SY002", raw_materials="밀가루, 팜유, 고춧가루, 캡사이신", api_source="샘플"),
+                FoodItem(food_name="짜짜로니", category="라면", manufacturer="삼양식품(주)", report_no="SY003", raw_materials="밀가루, 팜유, 춘장", api_source="샘플"),
+                FoodItem(food_name="까르보불닭볶음면", category="라면", manufacturer="삼양식품(주)", report_no="SY004", raw_materials="밀가루, 팜유, 크림분말", api_source="샘플"),
+                FoodItem(food_name="핵불닭볶음면", category="라면", manufacturer="삼양식품(주)", report_no="SY005", raw_materials="밀가루, 팜유, 청양고추", api_source="샘플"),
+            ],
+            "오뚜기(주)": [
+                FoodItem(food_name="진라면 순한맛", category="라면", manufacturer="오뚜기(주)", report_no="OT001", raw_materials="밀가루, 팜유, 소고기분말", api_source="샘플"),
+                FoodItem(food_name="진라면 매운맛", category="라면", manufacturer="오뚜기(주)", report_no="OT002", raw_materials="밀가루, 팜유, 고춧가루", api_source="샘플"),
+                FoodItem(food_name="참깨라면", category="라면", manufacturer="오뚜기(주)", report_no="OT003", raw_materials="밀가루, 팜유, 참깨", api_source="샘플"),
+                FoodItem(food_name="오뚜기 카레 순한맛", category="즉석조리", manufacturer="오뚜기(주)", report_no="OT004", raw_materials="카레분말, 양파, 감자", api_source="샘플"),
+                FoodItem(food_name="3분 짜장", category="즉석조리", manufacturer="오뚜기(주)", report_no="OT005", raw_materials="춘장, 돼지고기, 양파", api_source="샘플"),
+                FoodItem(food_name="케찹", category="소스", manufacturer="오뚜기(주)", report_no="OT006", raw_materials="토마토, 설탕, 식초", api_source="샘플"),
+            ],
+            "CJ제일제당(주)": [
+                FoodItem(food_name="햇반", category="즉석밥", manufacturer="CJ제일제당(주)", report_no="CJ001", raw_materials="쌀, 정제수", api_source="샘플"),
+                FoodItem(food_name="비비고 왕교자", category="만두", manufacturer="CJ제일제당(주)", report_no="CJ002", raw_materials="밀가루, 돼지고기, 배추", api_source="샘플"),
+                FoodItem(food_name="스팸 클래식", category="캔햄", manufacturer="CJ제일제당(주)", report_no="CJ003", raw_materials="돼지고기, 전분, 소금", api_source="샘플"),
+                FoodItem(food_name="다시다", category="조미료", manufacturer="CJ제일제당(주)", report_no="CJ004", raw_materials="소고기엑기스, 소금, MSG", api_source="샘플"),
+                FoodItem(food_name="백설 식용유", category="식용유", manufacturer="CJ제일제당(주)", report_no="CJ005", raw_materials="대두유", api_source="샘플"),
+            ],
+            "롯데제과(주)": [
+                FoodItem(food_name="초코파이", category="과자", manufacturer="롯데제과(주)", report_no="LT001", raw_materials="밀가루, 설탕, 초콜릿", api_source="샘플"),
+                FoodItem(food_name="빼빼로", category="과자", manufacturer="롯데제과(주)", report_no="LT002", raw_materials="밀가루, 초콜릿, 설탕", api_source="샘플"),
+                FoodItem(food_name="꼬깔콘", category="스낵", manufacturer="롯데제과(주)", report_no="LT003", raw_materials="옥수수, 팜유, 소금", api_source="샘플"),
+                FoodItem(food_name="칸쵸", category="과자", manufacturer="롯데제과(주)", report_no="LT004", raw_materials="밀가루, 설탕, 초콜릿", api_source="샘플"),
+            ],
+            "빙그레(주)": [
+                FoodItem(food_name="바나나맛우유", category="가공유", manufacturer="빙그레(주)", report_no="BG001", raw_materials="원유, 설탕, 바나나농축액", api_source="샘플"),
+                FoodItem(food_name="메로나", category="아이스크림", manufacturer="빙그레(주)", report_no="BG002", raw_materials="정제수, 설탕, 멜론농축액", api_source="샘플"),
+                FoodItem(food_name="투게더", category="아이스크림", manufacturer="빙그레(주)", report_no="BG003", raw_materials="원유, 설탕, 바닐라향", api_source="샘플"),
+                FoodItem(food_name="요플레", category="발효유", manufacturer="빙그레(주)", report_no="BG004", raw_materials="원유, 유산균, 설탕", api_source="샘플"),
+            ],
+            "풀무원식품(주)": [
+                FoodItem(food_name="풀무원 두부", category="두부", manufacturer="풀무원식품(주)", report_no="PM001", raw_materials="대두, 정제수, 응고제", api_source="샘플"),
+                FoodItem(food_name="생면식감 라면", category="라면", manufacturer="풀무원식품(주)", report_no="PM002", raw_materials="밀가루, 팜유, 소금", api_source="샘플"),
+                FoodItem(food_name="김치", category="김치", manufacturer="풀무원식품(주)", report_no="PM003", raw_materials="배추, 고춧가루, 젓갈", api_source="샘플"),
+            ],
+            "대상(주)": [
+                FoodItem(food_name="청정원 순창고추장", category="장류", manufacturer="대상(주)", report_no="DS001", raw_materials="고춧가루, 찹쌀, 메주", api_source="샘플"),
+                FoodItem(food_name="청정원 된장", category="장류", manufacturer="대상(주)", report_no="DS002", raw_materials="대두, 소금, 밀", api_source="샘플"),
+                FoodItem(food_name="미원", category="조미료", manufacturer="대상(주)", report_no="DS003", raw_materials="MSG", api_source="샘플"),
+            ],
+            "한국야쿠르트(주)": [
+                FoodItem(food_name="야쿠르트", category="발효유", manufacturer="한국야쿠르트(주)", report_no="YK001", raw_materials="탈지분유, 유산균, 설탕", api_source="샘플"),
+                FoodItem(food_name="쿠퍼스", category="건강음료", manufacturer="한국야쿠르트(주)", report_no="YK002", raw_materials="정제수, 비타민, 미네랄", api_source="샘플"),
+            ],
+            # 축산 업체
+            "하림(주)": [
+                FoodItem(food_name="하림 IFF 치킨너겟", category="닭고기가공품", manufacturer="하림(주)", report_no="HR001", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="하림 닭가슴살", category="닭고기", manufacturer="하림(주)", report_no="HR002", raw_materials="닭가슴살", api_source="샘플"),
+                FoodItem(food_name="하림 치킨까스", category="닭고기가공품", manufacturer="하림(주)", report_no="HR003", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="하림 닭볶음탕용", category="닭고기", manufacturer="하림(주)", report_no="HR004", raw_materials="닭고기", api_source="샘플"),
+                FoodItem(food_name="하림 더미니 소시지", category="소시지", manufacturer="하림(주)", report_no="HR005", raw_materials="닭고기, 전분, 소금", api_source="샘플"),
+            ],
+            "마니커(주)": [
+                FoodItem(food_name="마니커 순살치킨", category="닭고기가공품", manufacturer="마니커(주)", report_no="MK001", raw_materials="닭고기, 밀가루, 전분", api_source="샘플"),
+                FoodItem(food_name="마니커 치킨텐더", category="닭고기가공품", manufacturer="마니커(주)", report_no="MK002", raw_materials="닭고기, 밀가루, 빵가루", api_source="샘플"),
+                FoodItem(food_name="마니커 닭다리살", category="닭고기", manufacturer="마니커(주)", report_no="MK003", raw_materials="닭다리살", api_source="샘플"),
+            ],
+            "선진(주)": [
+                FoodItem(food_name="선진 한돈 삼겹살", category="돼지고기", manufacturer="선진(주)", report_no="SJ001", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="선진 한돈 목살", category="돼지고기", manufacturer="선진(주)", report_no="SJ002", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="선진 한돈 앞다리살", category="돼지고기", manufacturer="선진(주)", report_no="SJ003", raw_materials="돼지고기", api_source="샘플"),
+            ],
+            "목우촌(주)": [
+                FoodItem(food_name="목우촌 뚝심한우", category="소고기", manufacturer="목우촌(주)", report_no="MW001", raw_materials="한우", api_source="샘플"),
+                FoodItem(food_name="목우촌 주부9단 베이컨", category="베이컨", manufacturer="목우촌(주)", report_no="MW002", raw_materials="돼지고기, 소금, 향신료", api_source="샘플"),
+                FoodItem(food_name="목우촌 프리미엄 소시지", category="소시지", manufacturer="목우촌(주)", report_no="MW003", raw_materials="돼지고기, 전분, 소금", api_source="샘플"),
+            ],
+            "도드람푸드(주)": [
+                FoodItem(food_name="도드람 한돈 삼겹살", category="돼지고기", manufacturer="도드람푸드(주)", report_no="DD001", raw_materials="돼지고기", api_source="샘플"),
+                FoodItem(food_name="도드람 수제 햄", category="햄", manufacturer="도드람푸드(주)", report_no="DD002", raw_materials="돼지고기, 소금, 향신료", api_source="샘플"),
+                FoodItem(food_name="도드람 프랑크 소시지", category="소시지", manufacturer="도드람푸드(주)", report_no="DD003", raw_materials="돼지고기, 전분, 소금", api_source="샘플"),
+            ],
+            "체리부로(주)": [
+                FoodItem(food_name="체리부로 닭가슴살", category="닭고기", manufacturer="체리부로(주)", report_no="CB001", raw_materials="닭가슴살", api_source="샘플"),
+                FoodItem(food_name="체리부로 훈제치킨", category="닭고기가공품", manufacturer="체리부로(주)", report_no="CB002", raw_materials="닭고기, 소금, 훈연향", api_source="샘플"),
+                FoodItem(food_name="체리부로 닭안심", category="닭고기", manufacturer="체리부로(주)", report_no="CB003", raw_materials="닭안심", api_source="샘플"),
+            ],
+            "사조팜스(주)": [
+                FoodItem(food_name="사조팜스 통닭다리", category="닭고기", manufacturer="사조팜스(주)", report_no="SP001", raw_materials="닭다리", api_source="샘플"),
+                FoodItem(food_name="사조팜스 닭볶음탕용", category="닭고기", manufacturer="사조팜스(주)", report_no="SP002", raw_materials="닭고기", api_source="샘플"),
+                FoodItem(food_name="사조팜스 닭가슴살 슬라이스", category="닭고기", manufacturer="사조팜스(주)", report_no="SP003", raw_materials="닭가슴살", api_source="샘플"),
+            ],
+        }
+
+        items = sample_products.get(company_name, [])
+
+        # 페이지네이션
+        total = len(items)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        return FoodSearchResult(
+            total_count=total,
+            page=page,
+            per_page=per_page,
+            items=items[start_idx:end_idx]
+        )
+
+    def _get_sample_foods(
+        self,
+        keyword: str,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """샘플 식품 데이터"""
+        # 모든 제품 수집
+        all_products = []
+        for company, products in {
+            "농심(주)": self._get_sample_products_by_company("농심(주)", 1, 100).items,
+            "삼양식품(주)": self._get_sample_products_by_company("삼양식품(주)", 1, 100).items,
+            "오뚜기(주)": self._get_sample_products_by_company("오뚜기(주)", 1, 100).items,
+        }.items():
+            all_products.extend(products)
+
+        # 키워드 필터
+        if keyword:
+            filtered = [
+                p for p in all_products
+                if keyword.lower() in p.food_name.lower()
+                or keyword.lower() in (p.category or "").lower()
+            ]
+        else:
+            filtered = all_products
+
+        total = len(filtered)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        return FoodSearchResult(
+            total_count=total,
+            page=page,
+            per_page=per_page,
+            items=filtered[start_idx:end_idx]
+        )
+
+
+# 지역 목록 반환
+def get_regions():
+    return list(REGION_CODES.keys())
+
+def get_business_types():
+    return list(BUSINESS_TYPES.keys())
+
+
+# 싱글톤 인스턴스
+food_api_service = FoodAPIService()
