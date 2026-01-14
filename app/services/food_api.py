@@ -128,6 +128,11 @@ class FoodAPIService:
             "name": "식품품목제조보고",
             "service_id": "I1250",
             "description": "품목 상세 정보 조회"
+        },
+        "I2860": {
+            "name": "건강기능식품업소 인허가 변경 정보",
+            "service_id": "I2860",
+            "description": "건강기능식품 업체 정보 조회"
         }
     }
 
@@ -149,7 +154,16 @@ class FoodAPIService:
         page: int = 1,
         per_page: int = 10
     ) -> CompanySearchResult:
-        """업체 검색 (공공데이터포털 → 식품안전나라 I1220 폴백)"""
+        """업체 검색 (업종별 API 선택 + 폴백 구조)"""
+
+        # 건강기능식품 업종인 경우 I2860 API 우선 사용
+        if business_type == "건강기능식품" and self.food_safety_api_key:
+            try:
+                result = await self._search_health_food_companies(keyword, page, per_page)
+                if result and result.total_count > 0:
+                    return self._filter_companies(result, region, business_type)
+            except Exception as e:
+                print(f"[건강기능식품 업체검색] 오류: {e}")
 
         # 1차: 공공데이터포털 API 시도
         if self.api_key_1:
@@ -213,6 +227,26 @@ class FoodAPIService:
 
             if response.status_code == 200:
                 return self._parse_food_safety_company_response(response.json(), page, per_page)
+        return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    async def _search_health_food_companies(
+        self, keyword: str, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I2860 건강기능식품 업체 검색"""
+        async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+            start_idx = (page - 1) * per_page + 1
+            end_idx = start_idx + per_page - 1
+
+            # URL 형식: /api/키/I2860/json/시작/끝/BSSH_NM=값
+            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}"
+            if keyword:
+                url += f"/BSSH_NM={keyword}"
+
+            response = await client.get(url)
+            print(f"[건강기능식품 업체검색] 상태: {response.status_code}")
+
+            if response.status_code == 200:
+                return self._parse_health_food_company_response(response.json(), page, per_page)
         return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     async def search_products_by_company(
@@ -493,6 +527,49 @@ class FoodAPIService:
             )
         except Exception as e:
             print(f"[식품안전나라-업체] 파싱 오류: {e}")
+            return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_health_food_company_response(
+        self, data: dict, page: int, per_page: int
+    ) -> CompanySearchResult:
+        """식품안전나라 I2860 건강기능식품 업체 응답 파싱"""
+        try:
+            # 식품안전나라 응답 구조: {서비스명: {row: [...], total_count: ...}}
+            service_data = data.get("I2860", {})
+            total_count = int(service_data.get("total_count", "0"))
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            # 업체명으로 중복 제거
+            companies_dict = {}
+            for item in items_data:
+                company_name = item.get("BSSH_NM", "")
+                if company_name and company_name not in companies_dict:
+                    companies_dict[company_name] = CompanyItem(
+                        company_name=company_name,
+                        license_no=item.get("LCNS_NO", ""),
+                        business_type=item.get("INDUTY_CD_NM", "건강기능식품"),
+                        address=item.get("SITE_ADDR", ""),
+                        phone=item.get("TELNO", ""),
+                        status="운영",
+                        api_source="식품안전나라"
+                    )
+
+            items = list(companies_dict.values())
+
+            return CompanySearchResult(
+                total_count=len(items),
+                page=page,
+                per_page=per_page,
+                items=items
+            )
+        except Exception as e:
+            print(f"[건강기능식품-업체] 파싱 오류: {e}")
             return CompanySearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     def _parse_food_safety_product_response(
