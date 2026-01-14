@@ -110,6 +110,21 @@ class CompanySearchResult(BaseModel):
     items: list[CompanyItem]
 
 
+class RepHistoryItem(BaseModel):
+    """대표자 변경 이력 항목 모델"""
+    representative: str
+    change_date: Optional[str] = None
+    change_type: Optional[str] = None
+    license_no: Optional[str] = None
+
+
+class RepHistoryResult(BaseModel):
+    """대표자 변경 이력 결과 모델"""
+    company_name: str
+    total_count: int
+    items: list[RepHistoryItem]
+
+
 class FoodAPIService:
     """통합 식품 API 서비스 (공공데이터포털 + 식품안전나라)"""
 
@@ -339,6 +354,162 @@ class FoodAPIService:
 
         # 3차: 샘플 데이터 반환
         return self._get_sample_foods(keyword, page, per_page)
+
+    async def get_representative_history(
+        self,
+        company_name: str,
+        license_no: str = ""
+    ) -> RepHistoryResult:
+        """대표자 변경 이력 조회 (I2860 건강기능식품 변경정보 API 활용)"""
+        print(f"[대표자이력] 조회 시작 - company: '{company_name}', license: '{license_no}'")
+
+        # 1차: I2860 건강기능식품 변경정보 API 시도 (인허가 변경정보 포함)
+        if self.food_safety_api_key:
+            try:
+                result = await self._get_rep_history_i2860(company_name, license_no)
+                if result and result.total_count > 0:
+                    return result
+            except Exception as e:
+                print(f"[대표자이력] I2860 오류: {e}")
+
+        # 2차: 현재 대표자 정보만 반환 (I1220에서 조회)
+        try:
+            company_result = await self._search_companies_food_safety(company_name, 1, 1)
+            if company_result and company_result.items:
+                current_rep = company_result.items[0].representative
+                if current_rep:
+                    return RepHistoryResult(
+                        company_name=company_name,
+                        total_count=1,
+                        items=[RepHistoryItem(
+                            representative=current_rep,
+                            change_date=company_result.items[0].license_date,
+                            change_type="현재 대표자"
+                        )]
+                    )
+        except Exception as e:
+            print(f"[대표자이력] I1220 조회 오류: {e}")
+
+        # 3차: 샘플 대표자 이력 반환
+        return self._get_sample_rep_history(company_name)
+
+    async def _get_rep_history_i2860(
+        self, company_name: str, license_no: str
+    ) -> RepHistoryResult:
+        """식품안전나라 I2860 건강기능식품 인허가 변경 이력 조회"""
+        print(f"[I2860 이력] 호출 - company: '{company_name}'")
+        try:
+            async with httpx.AsyncClient(timeout=self.api_timeout) as client:
+                # URL 형식: /api/키/I2860/json/시작/끝/BSSH_NM=값
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/100"
+                if company_name:
+                    encoded_keyword = urllib.parse.quote(company_name, safe='')
+                    url += f"/BSSH_NM={encoded_keyword}"
+
+                print(f"[I2860 이력] 요청 URL: {url}")
+                response = await client.get(url)
+                print(f"[I2860 이력] 응답 상태: {response.status_code}")
+
+                if response.status_code == 200:
+                    return self._parse_rep_history_i2860(response.json(), company_name)
+        except Exception as e:
+            print(f"[I2860 이력] 예외: {type(e).__name__}: {e}")
+            raise
+        return RepHistoryResult(company_name=company_name, total_count=0, items=[])
+
+    def _parse_rep_history_i2860(
+        self, data: dict, company_name: str
+    ) -> RepHistoryResult:
+        """I2860 대표자 변경 이력 응답 파싱"""
+        try:
+            service_data = data.get("I2860", {})
+            items_data = service_data.get("row", [])
+
+            if not items_data:
+                return RepHistoryResult(company_name=company_name, total_count=0, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            # 변경이력에서 대표자 관련 항목 추출
+            history_items = []
+            seen_reps = set()
+
+            for item in items_data:
+                # 변경사유에 대표자 관련 내용이 있는지 확인
+                change_reason = item.get("CHNG_RESON_CN", "")
+                change_date = item.get("CHNG_DT", "") or item.get("CHNG_APVL_DT", "")
+                change_type = item.get("CHNG_CN", "")
+
+                # 대표자명 추출 (PRSDNT_NM 또는 변경사유에서)
+                rep_name = item.get("PRSDNT_NM", "")
+                if not rep_name:
+                    # 변경사유에서 대표자명 추출 시도
+                    if "대표" in change_reason:
+                        rep_name = change_reason
+
+                if rep_name and rep_name not in seen_reps:
+                    seen_reps.add(rep_name)
+                    history_items.append(RepHistoryItem(
+                        representative=rep_name,
+                        change_date=change_date,
+                        change_type=change_type or "변경",
+                        license_no=item.get("LCNS_NO", "")
+                    ))
+
+            # 변경일 기준 정렬 (최신순)
+            history_items.sort(key=lambda x: x.change_date or "", reverse=True)
+
+            return RepHistoryResult(
+                company_name=company_name,
+                total_count=len(history_items),
+                items=history_items
+            )
+        except Exception as e:
+            print(f"[I2860 이력] 파싱 오류: {e}")
+            return RepHistoryResult(company_name=company_name, total_count=0, items=[])
+
+    def _get_sample_rep_history(self, company_name: str) -> RepHistoryResult:
+        """샘플 대표자 변경 이력"""
+        # 샘플 대표자 변경 이력 데이터
+        sample_history = {
+            "삼양식품(주)": [
+                RepHistoryItem(representative="김정수", change_date="2020-03-15", change_type="현재 대표자"),
+                RepHistoryItem(representative="김윤", change_date="2015-01-20", change_type="대표자 변경"),
+                RepHistoryItem(representative="전중윤", change_date="2008-05-10", change_type="대표자 변경"),
+            ],
+            "농심(주)": [
+                RepHistoryItem(representative="이병학", change_date="2021-12-01", change_type="현재 대표자"),
+                RepHistoryItem(representative="박준", change_date="2017-03-15", change_type="대표자 변경"),
+                RepHistoryItem(representative="신춘호", change_date="2003-07-01", change_type="대표자 변경"),
+            ],
+            "CJ제일제당(주)": [
+                RepHistoryItem(representative="최은석", change_date="2022-04-01", change_type="현재 대표자"),
+                RepHistoryItem(representative="강신호", change_date="2018-09-01", change_type="대표자 변경"),
+            ],
+            "오뚜기(주)": [
+                RepHistoryItem(representative="함영준", change_date="2019-06-01", change_type="현재 대표자"),
+                RepHistoryItem(representative="함태호", change_date="1980-01-01", change_type="설립"),
+            ],
+            "롯데제과(주)": [
+                RepHistoryItem(representative="민명기", change_date="2021-09-01", change_type="현재 대표자"),
+                RepHistoryItem(representative="이재혁", change_date="2017-11-01", change_type="대표자 변경"),
+            ],
+            "하림(주)": [
+                RepHistoryItem(representative="김홍국", change_date="2000-01-01", change_type="현재 대표자"),
+            ],
+            "빙그레(주)": [
+                RepHistoryItem(representative="전창원", change_date="2019-03-01", change_type="현재 대표자"),
+                RepHistoryItem(representative="박영호", change_date="2010-05-01", change_type="대표자 변경"),
+            ],
+        }
+
+        items = sample_history.get(company_name, [])
+        return RepHistoryResult(
+            company_name=company_name,
+            total_count=len(items),
+            items=items
+        )
 
     async def _search_products_data_go_kr(
         self, company_name: str, product_name: str, page: int, per_page: int
@@ -748,77 +919,77 @@ class FoodAPIService:
         sample_companies = [
             # 서울
             CompanyItem(company_name="삼양식품(주)", license_no="19670001", business_type="식품",
-                       address="서울특별시 성북구 삼양로 123", region="서울", status="운영", api_source="샘플"),
+                       representative="김정수", address="서울특별시 성북구 삼양로 123", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="농심(주)", license_no="19680002", business_type="식품",
-                       address="서울특별시 동작구 신대방동 456", region="서울", status="운영", api_source="샘플"),
+                       representative="이병학", address="서울특별시 동작구 신대방동 456", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="CJ제일제당(주)", license_no="19530004", business_type="식품",
-                       address="서울특별시 중구 을지로 123", region="서울", status="운영", api_source="샘플"),
+                       representative="최은석", address="서울특별시 중구 을지로 123", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="대상(주)", license_no="19560005", business_type="식품",
-                       address="서울특별시 종로구 종로 456", region="서울", status="운영", api_source="샘플"),
+                       representative="임정배", address="서울특별시 종로구 종로 456", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="풀무원식품(주)", license_no="19840006", business_type="식품",
-                       address="서울특별시 강남구 테헤란로 789", region="서울", status="운영", api_source="샘플"),
+                       representative="이효율", address="서울특별시 강남구 테헤란로 789", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="롯데제과(주)", license_no="19670008", business_type="식품",
-                       address="서울특별시 영등포구 양평동 111", region="서울", status="운영", api_source="샘플"),
+                       representative="민명기", address="서울특별시 영등포구 양평동 111", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="해태제과(주)", license_no="19680010", business_type="식품",
-                       address="서울특별시 용산구 한강로 222", region="서울", status="운영", api_source="샘플"),
+                       representative="신정훈", address="서울특별시 용산구 한강로 222", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="동서식품(주)", license_no="19680011", business_type="식품",
-                       address="서울특별시 강남구 삼성동 333", region="서울", status="운영", api_source="샘플"),
+                       representative="김광수", address="서울특별시 강남구 삼성동 333", region="서울", status="운영", api_source="샘플"),
             # 경기
             CompanyItem(company_name="오뚜기(주)", license_no="19690003", business_type="식품",
-                       address="경기도 안양시 동안구 평촌동 123", region="경기", status="운영", api_source="샘플"),
+                       representative="함영준", address="경기도 안양시 동안구 평촌동 123", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="빙그레(주)", license_no="19670007", business_type="식품",
-                       address="경기도 남양주시 진접읍 456", region="경기", status="운영", api_source="샘플"),
+                       representative="전창원", address="경기도 남양주시 진접읍 456", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="매일유업(주)", license_no="19690012", business_type="식품",
-                       address="경기도 용인시 기흥구 789", region="경기", status="운영", api_source="샘플"),
+                       representative="김선희", address="경기도 용인시 기흥구 789", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="남양유업(주)", license_no="19640013", business_type="식품",
-                       address="경기도 세종시 세종로 111", region="경기", status="운영", api_source="샘플"),
+                       representative="이광범", address="경기도 세종시 세종로 111", region="경기", status="운영", api_source="샘플"),
             # 축산
             CompanyItem(company_name="하림(주)", license_no="19860014", business_type="축산",
-                       address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
+                       representative="김홍국", address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
             CompanyItem(company_name="마니커(주)", license_no="19920201", business_type="축산",
-                       address="충청남도 천안시 동남구 123", region="충남", status="운영", api_source="샘플"),
+                       representative="박철", address="충청남도 천안시 동남구 123", region="충남", status="운영", api_source="샘플"),
             CompanyItem(company_name="선진(주)", license_no="19800202", business_type="축산",
-                       address="경기도 파주시 문산읍 456", region="경기", status="운영", api_source="샘플"),
+                       representative="이범권", address="경기도 파주시 문산읍 456", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="목우촌(주)", license_no="19840203", business_type="축산",
-                       address="경상북도 영천시 북안면 789", region="경북", status="운영", api_source="샘플"),
+                       representative="이상열", address="경상북도 영천시 북안면 789", region="경북", status="운영", api_source="샘플"),
             CompanyItem(company_name="도드람푸드(주)", license_no="19950204", business_type="축산",
-                       address="경기도 안성시 미양면 111", region="경기", status="운영", api_source="샘플"),
+                       representative="박광욱", address="경기도 안성시 미양면 111", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="체리부로(주)", license_no="19850205", business_type="축산",
-                       address="충청북도 음성군 대소면 222", region="충북", status="운영", api_source="샘플"),
+                       representative="정희용", address="충청북도 음성군 대소면 222", region="충북", status="운영", api_source="샘플"),
             CompanyItem(company_name="사조팜스(주)", license_no="19900206", business_type="축산",
-                       address="경상북도 상주시 함창읍 333", region="경북", status="운영", api_source="샘플"),
+                       representative="주지홍", address="경상북도 상주시 함창읍 333", region="경북", status="운영", api_source="샘플"),
             # 부산
             CompanyItem(company_name="삼진어묵(주)", license_no="19530020", business_type="식품",
-                       address="부산광역시 영도구 봉래동 123", region="부산", status="운영", api_source="샘플"),
+                       representative="박용준", address="부산광역시 영도구 봉래동 123", region="부산", status="운영", api_source="샘플"),
             CompanyItem(company_name="동원F&B(주) 부산공장", license_no="19690021", business_type="식품",
-                       address="부산광역시 사하구 장림동 456", region="부산", status="운영", api_source="샘플"),
+                       representative="김재철", address="부산광역시 사하구 장림동 456", region="부산", status="운영", api_source="샘플"),
             # 대구
             CompanyItem(company_name="팔도(주)", license_no="19830030", business_type="식품",
-                       address="대구광역시 달성군 다사읍 123", region="대구", status="운영", api_source="샘플"),
+                       representative="이영재", address="대구광역시 달성군 다사읍 123", region="대구", status="운영", api_source="샘플"),
             # 충북
             CompanyItem(company_name="청정원(주)", license_no="19870040", business_type="식품",
-                       address="충청북도 청주시 흥덕구 123", region="충북", status="운영", api_source="샘플"),
+                       representative="임정배", address="충청북도 청주시 흥덕구 123", region="충북", status="운영", api_source="샘플"),
             # 충남
             CompanyItem(company_name="사조대림(주)", license_no="19710041", business_type="식품",
-                       address="충청남도 아산시 배방읍 456", region="충남", status="운영", api_source="샘플"),
+                       representative="주지홍", address="충청남도 아산시 배방읍 456", region="충남", status="운영", api_source="샘플"),
             # 전북
             CompanyItem(company_name="동원F&B(주)", license_no="19690050", business_type="식품",
-                       address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
+                       representative="김재철", address="전북특별자치도 익산시 왕궁면 789", region="전북", status="운영", api_source="샘플"),
             # 경북
             CompanyItem(company_name="정식품(주)", license_no="19730060", business_type="식품",
-                       address="경상북도 칠곡군 지천면 123", region="경북", status="운영", api_source="샘플"),
+                       representative="박승주", address="경상북도 칠곡군 지천면 123", region="경북", status="운영", api_source="샘플"),
             # 경남
             CompanyItem(company_name="사조해표(주)", license_no="19720070", business_type="식품",
-                       address="경상남도 창원시 마산회원구 456", region="경남", status="운영", api_source="샘플"),
+                       representative="주지홍", address="경상남도 창원시 마산회원구 456", region="경남", status="운영", api_source="샘플"),
             # 건강기능식품
             CompanyItem(company_name="한국야쿠르트(주)", license_no="19710100", business_type="건강기능식품",
-                       address="서울특별시 서초구 서초동 123", region="서울", status="운영", api_source="샘플"),
+                       representative="김병진", address="서울특별시 서초구 서초동 123", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="종근당건강(주)", license_no="19830101", business_type="건강기능식품",
-                       address="서울특별시 강동구 성내동 456", region="서울", status="운영", api_source="샘플"),
+                       representative="김영주", address="서울특별시 강동구 성내동 456", region="서울", status="운영", api_source="샘플"),
             CompanyItem(company_name="뉴트리(주)", license_no="20000102", business_type="건강기능식품",
-                       address="경기도 성남시 분당구 789", region="경기", status="운영", api_source="샘플"),
+                       representative="강준희", address="경기도 성남시 분당구 789", region="경기", status="운영", api_source="샘플"),
             CompanyItem(company_name="고려은단(주)", license_no="19730103", business_type="건강기능식품",
-                       address="서울특별시 강남구 역삼동 111", region="서울", status="운영", api_source="샘플"),
+                       representative="장영호", address="서울특별시 강남구 역삼동 111", region="서울", status="운영", api_source="샘플"),
         ]
 
         # 필터링

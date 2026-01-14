@@ -140,6 +140,7 @@
                             <th class="col-no">번호</th>
                             <th class="col-license">인허가번호</th>
                             <th class="col-name">업체명</th>
+                            <th class="col-rep">대표자</th>
                             <th class="col-type">업종</th>
                             <th class="col-address">소재지</th>
                             <th class="col-status">영업상태</th>
@@ -147,7 +148,7 @@
                     </thead>
                     <tbody id="result-tbody">
                         <tr class="empty-row">
-                            <td colspan="6">조회된 데이터가 없습니다.</td>
+                            <td colspan="7">조회된 데이터가 없습니다.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -174,6 +175,23 @@
             </div>
         </div>
 
+        <!-- 대표자 변경 이력 모달 -->
+        <div id="rep-history-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="rep-modal-title">대표자 변경 이력</h2>
+                    <button class="modal-close" onclick="closeRepModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="rep-loading" class="loading">
+                        <div class="spinner"></div>
+                        <p>변경 이력 조회 중...</p>
+                    </div>
+                    <div id="rep-history-list" class="rep-history-list"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- 푸터 -->
         <footer class="footer">
             <p>데이터 출처: <a href="https://www.data.go.kr" target="_blank">공공데이터포털</a></p>
@@ -181,6 +199,6 @@
         </footer>
     </div>
 
-    <script src="/static/js/app.js?v=4"></script>
+    <script src="/static/js/app.js?v=5"></script>
 </body>
 </html>

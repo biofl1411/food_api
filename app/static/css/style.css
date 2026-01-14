@@ -232,9 +232,10 @@ body {
 
 .result-table .col-no { width: 60px; text-align: center; }
 .result-table .col-license { width: 120px; }
-.result-table .col-name { min-width: 200px; }
+.result-table .col-name { min-width: 180px; }
+.result-table .col-rep { width: 100px; }
 .result-table .col-type { width: 120px; }
-.result-table .col-address { min-width: 200px; }
+.result-table .col-address { min-width: 180px; }
 .result-table .col-status { width: 80px; text-align: center; }
 
 .company-link {
@@ -245,6 +246,16 @@ body {
 }
 
 .company-link:hover {
+    text-decoration: underline;
+}
+
+.rep-link {
+    color: #2563eb;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.rep-link:hover {
     text-decoration: underline;
 }
 
@@ -418,6 +429,67 @@ body {
 }
 
 .no-products {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+/* 대표자 변경 이력 */
+.rep-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rep-history-item {
+    display: flex;
+    gap: 15px;
+    padding: 15px;
+    background: var(--table-header-bg);
+    border-radius: 6px;
+    border-left: 4px solid #2563eb;
+}
+
+.rep-history-no {
+    width: 30px;
+    height: 30px;
+    background: #2563eb;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.rep-history-content {
+    flex: 1;
+}
+
+.rep-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.rep-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.rep-info span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.no-history {
     text-align: center;
     padding: 40px;
     color: var(--text-secondary);

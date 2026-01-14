@@ -25,7 +25,12 @@ const elements = {
     modal: document.getElementById('product-modal'),
     modalCompanyName: document.getElementById('modal-company-name'),
     productLoading: document.getElementById('product-loading'),
-    productList: document.getElementById('product-list')
+    productList: document.getElementById('product-list'),
+    // 대표자 변경 이력 모달
+    repModal: document.getElementById('rep-history-modal'),
+    repModalTitle: document.getElementById('rep-modal-title'),
+    repLoading: document.getElementById('rep-loading'),
+    repHistoryList: document.getElementById('rep-history-list')
 };
 
 // 초기화
@@ -58,9 +63,17 @@ function setupEventListeners() {
         if (e.target === elements.modal) closeModal();
     });
 
+    // 대표자 이력 모달 외부 클릭 시 닫기
+    elements.repModal.addEventListener('click', (e) => {
+        if (e.target === elements.repModal) closeRepModal();
+    });
+
     // ESC 키로 모달 닫기
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeModal();
+        if (e.key === 'Escape') {
+            closeModal();
+            closeRepModal();
+        }
     });
 }
 
@@ -147,7 +160,7 @@ function displayResults(data) {
     if (items.length === 0) {
         elements.resultTbody.innerHTML = `
             <tr class="empty-row">
-                <td colspan="6">조회된 데이터가 없습니다.</td>
+                <td colspan="7">조회된 데이터가 없습니다.</td>
             </tr>
         `;
         return;
@@ -163,6 +176,13 @@ function displayResults(data) {
                 <a class="company-link" onclick="showCompanyProducts('${escapeHtml(item.company_name)}')">
                     ${escapeHtml(item.company_name)}
                 </a>
+            </td>
+            <td class="col-rep">
+                ${item.representative ? `
+                    <a class="rep-link" onclick="showRepHistory('${escapeHtml(item.company_name)}', '${escapeHtml(item.license_no || '')}')">
+                        ${escapeHtml(item.representative)}
+                    </a>
+                ` : '-'}
             </td>
             <td class="col-type">${escapeHtml(item.business_type || '-')}</td>
             <td class="col-address">${escapeHtml(item.address || '-')}</td>
@@ -236,6 +256,64 @@ function displayProducts(products) {
 // 모달 닫기
 function closeModal() {
     elements.modal.classList.add('hidden');
+}
+
+// 대표자 변경 이력 조회
+async function showRepHistory(companyName, licenseNo) {
+    // 모달 열기
+    elements.repModal.classList.remove('hidden');
+    elements.repModalTitle.textContent = companyName + ' - 대표자 변경 이력';
+    elements.repLoading.classList.remove('hidden');
+    elements.repHistoryList.innerHTML = '';
+
+    try {
+        const response = await fetch(`/api/companies/${encodeURIComponent(companyName)}/rep-history?license_no=${encodeURIComponent(licenseNo || '')}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        displayRepHistory(data.items);
+
+    } catch (error) {
+        console.error('대표자 변경 이력 조회 오류:', error);
+        elements.repHistoryList.innerHTML = `
+            <div class="no-history">변경 이력 조회 중 오류가 발생했습니다.</div>
+        `;
+    } finally {
+        elements.repLoading.classList.add('hidden');
+    }
+}
+
+// 대표자 변경 이력 표시
+function displayRepHistory(items) {
+    if (items.length === 0) {
+        elements.repHistoryList.innerHTML = `
+            <div class="no-history">변경 이력이 없습니다.</div>
+        `;
+        return;
+    }
+
+    const html = items.map((item, index) => `
+        <div class="rep-history-item">
+            <div class="rep-history-no">${index + 1}</div>
+            <div class="rep-history-content">
+                <div class="rep-name">${escapeHtml(item.representative || '-')}</div>
+                <div class="rep-info">
+                    ${item.change_date ? `<span>📅 변경일: ${escapeHtml(item.change_date)}</span>` : ''}
+                    ${item.change_type ? `<span>📝 변경유형: ${escapeHtml(item.change_type)}</span>` : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    elements.repHistoryList.innerHTML = html;
+}
+
+// 대표자 이력 모달 닫기
+function closeRepModal() {
+    elements.repModal.classList.add('hidden');
 }
 
 // 페이지네이션 업데이트
@@ -322,7 +400,7 @@ function hideLoading() {
 function showError(message) {
     elements.resultTbody.innerHTML = `
         <tr class="empty-row">
-            <td colspan="6">${escapeHtml(message)}</td>
+            <td colspan="7">${escapeHtml(message)}</td>
         </tr>
     `;
 }

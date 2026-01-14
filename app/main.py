@@ -11,6 +11,7 @@ from app.services.food_api import (
     food_api_service,
     FoodSearchResult,
     CompanySearchResult,
+    RepHistoryResult,
     get_regions,
     get_business_types
 )
@@ -85,6 +86,24 @@ async def get_company_products(
         company_name=company_name,
         page=page,
         per_page=per_page
+    )
+    return result
+
+
+@app.get("/api/companies/{company_name}/rep-history", response_model=RepHistoryResult)
+async def get_representative_history(
+    company_name: str,
+    license_no: str = Query("", description="인허가번호")
+):
+    """
+    대표자 변경 이력 조회 API
+
+    - **company_name**: 업체명
+    - **license_no**: 인허가번호 (선택)
+    """
+    result = await food_api_service.get_representative_history(
+        company_name=company_name,
+        license_no=license_no
     )
     return result
 
