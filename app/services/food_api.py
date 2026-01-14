@@ -244,7 +244,10 @@ class FoodAPIService:
             try:
                 result = await self._search_livestock_companies(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type, keyword)
+                    filtered = self._filter_companies(result, region, business_type, keyword)
+                    if filtered.total_count > 0:
+                        return filtered
+                    print(f"[축산 업체검색] 필터링 후 0건, 샘플 데이터로 폴백")
             except Exception as e:
                 print(f"[축산 업체검색] I1300 오류: {e}")
 
@@ -253,7 +256,10 @@ class FoodAPIService:
             try:
                 result = await self._search_health_food_companies(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type, keyword)
+                    filtered = self._filter_companies(result, region, business_type, keyword)
+                    if filtered.total_count > 0:
+                        return filtered
+                    print(f"[건강기능식품 업체검색] 필터링 후 0건, 샘플 데이터로 폴백")
             except Exception as e:
                 print(f"[건강기능식품 업체검색] 오류: {e}")
 
@@ -262,7 +268,10 @@ class FoodAPIService:
             try:
                 result = await self._search_companies_food_safety(keyword, page, per_page)
                 if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type, keyword)
+                    filtered = self._filter_companies(result, region, business_type, keyword)
+                    if filtered.total_count > 0:
+                        return filtered
+                    print(f"[업체검색] I1220 필터링 후 0건, 샘플 데이터로 폴백")
             except Exception as e:
                 print(f"[업체검색] 식품안전나라 I1220 오류: {e}")
 
