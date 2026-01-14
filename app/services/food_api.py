@@ -179,23 +179,14 @@ class FoodAPIService:
             except Exception as e:
                 print(f"[건강기능식품 업체검색] 오류: {e}")
 
-        # 1차: 공공데이터포털 API 시도
-        if self.api_key_1:
-            try:
-                result = await self._search_companies_data_go_kr(keyword, page, per_page)
-                if result and result.total_count > 0:
-                    return self._filter_companies(result, region, business_type)
-            except Exception as e:
-                print(f"[업체검색] 공공데이터포털 오류: {e}")
-
-        # 2차: 식품안전나라 I1220 API 폴백
+        # 1차: 식품안전나라 I1220 API (업체 검색 전용)
         if self.food_safety_api_key:
             try:
                 result = await self._search_companies_food_safety(keyword, page, per_page)
                 if result and result.total_count > 0:
                     return self._filter_companies(result, region, business_type)
             except Exception as e:
-                print(f"[업체검색] 식품안전나라 오류: {e}")
+                print(f"[업체검색] 식품안전나라 I1220 오류: {e}")
 
         # 3차: 샘플 데이터 반환
         return self._get_sample_companies(keyword, region, business_type, page, per_page)
