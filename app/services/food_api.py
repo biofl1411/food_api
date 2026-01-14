@@ -6,6 +6,7 @@
 """
 import os
 import httpx
+import urllib.parse
 from typing import Optional
 from pydantic import BaseModel
 
@@ -139,12 +140,23 @@ class FoodAPIService:
     FOOD_SAFETY_BASE_URL = "http://openapi.foodsafetykorea.go.kr/api"
 
     def __init__(self):
-        # 공공데이터포털 API 키
-        self.api_key_1 = os.getenv("PUBLIC_DATA_API_KEY", "")
-        # 식품안전나라 API 키
-        self.food_safety_api_key = os.getenv("FOOD_SAFETY_API_KEY", "")
+        # 공공데이터포털 API 키 (이중 인코딩 방지를 위해 자동 디코딩)
+        self.api_key_1 = self._decode_api_key(os.getenv("PUBLIC_DATA_API_KEY", ""))
+        # 식품안전나라 API 키 (PUBLIC_DATA_API_KEY_2 또는 FOOD_SAFETY_API_KEY)
+        self.food_safety_api_key = self._decode_api_key(
+            os.getenv("PUBLIC_DATA_API_KEY_2", "") or os.getenv("FOOD_SAFETY_API_KEY", "")
+        )
         # API 타임아웃 (초) - 빠른 폴백을 위해 짧게 설정
         self.api_timeout = 5.0
+
+    def _decode_api_key(self, key: str) -> str:
+        """URL 인코딩된 API 키를 자동 디코딩 (이중 인코딩 방지)"""
+        if not key:
+            return key
+        # %가 포함되어 있으면 이미 인코딩된 키이므로 디코딩
+        if "%" in key:
+            return urllib.parse.unquote(key)
+        return key
 
     async def search_companies(
         self,
