@@ -167,6 +167,8 @@ class FoodAPIService:
         per_page: int = 10
     ) -> CompanySearchResult:
         """업체 검색 (업종별 API 선택 + 폴백 구조)"""
+        # 디버그: 수신된 파라미터 확인
+        print(f"[업체검색] 수신 파라미터 - keyword: '{keyword}', region: '{region}', business_type: '{business_type}'")
 
         # 건강기능식품 업종인 경우 I2860 API 우선 사용
         if business_type == "건강기능식품" and self.food_safety_api_key:
@@ -214,8 +216,11 @@ class FoodAPIService:
 
             api_info = self.DATA_GO_KR_APIS["food_product"]
             url = f"{api_info['base_url']}{api_info['endpoint']}"
+            print(f"[업체검색-공공데이터] 요청 URL: {url}")
+            print(f"[업체검색-공공데이터] params: {params}")
             response = await client.get(url, params=params)
             print(f"[업체검색-공공데이터] 상태: {response.status_code}")
+            print(f"[업체검색-공공데이터] 실제 URL: {response.url}")
 
             if response.status_code == 200:
                 return self._parse_company_response(response.json(), page, per_page)
@@ -232,7 +237,9 @@ class FoodAPIService:
             # URL 형식: /api/키/I1220/json/시작/끝/BSSH_NM=값
             url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1220/json/{start_idx}/{end_idx}"
             if keyword:
-                url += f"/BSSH_NM={keyword}"
+                # URL 경로에 한글 직접 삽입 시 명시적 인코딩 필요
+                encoded_keyword = urllib.parse.quote(keyword, safe='')
+                url += f"/BSSH_NM={encoded_keyword}"
 
             response = await client.get(url)
             print(f"[업체검색-식품안전나라] 상태: {response.status_code}")
@@ -252,7 +259,9 @@ class FoodAPIService:
             # URL 형식: /api/키/I2860/json/시작/끝/BSSH_NM=값
             url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}"
             if keyword:
-                url += f"/BSSH_NM={keyword}"
+                # URL 경로에 한글 직접 삽입 시 명시적 인코딩 필요
+                encoded_keyword = urllib.parse.quote(keyword, safe='')
+                url += f"/BSSH_NM={encoded_keyword}"
 
             response = await client.get(url)
             print(f"[건강기능식품 업체검색] 상태: {response.status_code}")
