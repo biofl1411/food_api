@@ -339,9 +339,12 @@ class FoodAPIService:
         """식품안전나라 I2860 건강기능식품 업체 검색"""
         print(f"[I2860] 건강기능식품 업체검색 시작 - keyword: '{keyword}'")
         async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-            # 키워드를 API에 전달하지 않고 더 많은 결과를 가져와서 로컬 필터링
-            # (API가 정확히 일치하는 업체명만 반환하므로 부분 검색이 안 됨)
-            url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
+            # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
+            if keyword:
+                encoded_keyword = urllib.parse.quote(keyword, safe='')
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/100/BSSH_NM={encoded_keyword}"
+            else:
+                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
 
             print(f"[I2860] 요청 URL: {url}")
             response = await client.get(url)
@@ -358,9 +361,12 @@ class FoodAPIService:
         print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}'")
         try:
             async with httpx.AsyncClient(timeout=self.api_timeout) as client:
-                # 키워드를 API에 전달하지 않고 더 많은 결과를 가져와서 로컬 필터링
-                # (API가 정확히 일치하는 업체명만 반환하므로 부분 검색이 안 됨)
-                url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/500"
+                # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
+                if keyword:
+                    encoded_keyword = urllib.parse.quote(keyword, safe='')
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/100/BSSH_NM={encoded_keyword}"
+                else:
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/500"
 
                 print(f"[I1300] 요청 URL: {url}")
                 response = await client.get(url)
