@@ -9,6 +9,10 @@ import httpx
 import urllib.parse
 from typing import Optional
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# 환경변수 로드 (싱글톤 생성 전에 호출 필요)
+load_dotenv()
 
 
 # 지역 코드 매핑
