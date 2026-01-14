@@ -55,12 +55,12 @@ cp .env.example .env
 ### 3. 서버 실행
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1411
 ```
 
 ### 4. 접속
 
-브라우저에서 http://localhost:8000 접속
+브라우저에서 http://localhost:1411 접속
 
 ## API 엔드포인트
 
