@@ -189,6 +189,12 @@ body {
     color: var(--text-primary);
 }
 
+.food-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .food-category {
     display: inline-block;
     padding: 4px 12px;
@@ -196,6 +202,16 @@ body {
     color: #0369a1;
     border-radius: 20px;
     font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.api-source {
+    display: inline-block;
+    padding: 4px 12px;
+    background-color: #f0fdf4;
+    color: #166534;
+    border-radius: 20px;
+    font-size: 0.75rem;
     font-weight: 500;
 }
 

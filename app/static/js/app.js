@@ -125,13 +125,16 @@ function createFoodCard(food) {
         <article class="food-card">
             <div class="food-header">
                 <h2 class="food-name">${escapeHtml(food.food_name)}</h2>
-                ${food.category ? `<span class="food-category">${escapeHtml(food.category)}</span>` : ''}
+                <div class="food-badges">
+                    ${food.category ? `<span class="food-category">${escapeHtml(food.category)}</span>` : ''}
+                    ${food.api_source ? `<span class="api-source">${escapeHtml(food.api_source)}</span>` : ''}
+                </div>
             </div>
 
             <div class="food-meta">
                 ${food.manufacturer ? `<span>🏭 제조사: ${escapeHtml(food.manufacturer)}</span>` : ''}
                 ${food.report_no ? `<span>📋 품목번호: ${escapeHtml(food.report_no)}</span>` : ''}
-                ${food.serving_size ? `<span>📦 보관방법: ${escapeHtml(food.serving_size)}</span>` : ''}
+                ${food.serving_size ? `<span>📦 용량/보관: ${escapeHtml(food.serving_size)}</span>` : ''}
             </div>
 
             ${rawMaterials ? `

@@ -1,11 +1,12 @@
 """
 공공데이터포털 식품 API 서비스
-- 식품의약품안전처 식품(첨가물)품목제조보고 API 활용
+- 식품(첨가물)품목제조보고 API
+- 식품제조가공업정보 API
 """
 import os
+import asyncio
 import httpx
 from typing import Optional
-from urllib.parse import unquote
 from pydantic import BaseModel
 
 
@@ -24,6 +25,7 @@ class FoodItem(BaseModel):
     manufacturer: Optional[str] = None
     report_no: Optional[str] = None
     raw_materials: Optional[str] = None
+    api_source: Optional[str] = None  # 어떤 API에서 왔는지
 
 
 class FoodSearchResult(BaseModel):
@@ -35,13 +37,29 @@ class FoodSearchResult(BaseModel):
 
 
 class FoodAPIService:
-    """식품 품목제조보고 API 서비스"""
+    """통합 식품 API 서비스"""
 
-    # 식품(첨가물)품목제조보고(원재료) API
-    BASE_URL = "http://apis.data.go.kr/1471000/FoodFlshdAddtvrptInfoService"
+    # API 엔드포인트들
+    APIS = {
+        "food_product": {
+            "name": "식품품목제조보고",
+            "base_url": "http://apis.data.go.kr/1471000/FoodFlshdAddtvrptInfoService",
+            "endpoint": "/getFoodFlshdAddtvrptInfoList",
+            "key_env": "PUBLIC_DATA_API_KEY",
+            "search_param": "PRDLST_NM"
+        },
+        "food_manufacture": {
+            "name": "식품제조가공업",
+            "base_url": "http://apis.data.go.kr/B553748/CertImgListServiceV3",
+            "endpoint": "/getCertImgListServiceV3",
+            "key_env": "PUBLIC_DATA_API_KEY_2",
+            "search_param": "prdlstNm"
+        }
+    }
 
     def __init__(self):
-        self.api_key = os.getenv("PUBLIC_DATA_API_KEY", "")
+        self.api_key_1 = os.getenv("PUBLIC_DATA_API_KEY", "")
+        self.api_key_2 = os.getenv("PUBLIC_DATA_API_KEY_2", "")
 
     async def search_foods(
         self,
@@ -50,7 +68,7 @@ class FoodAPIService:
         per_page: int = 10
     ) -> FoodSearchResult:
         """
-        식품 검색
+        통합 식품 검색 - 두 API를 동시에 호출
 
         Args:
             keyword: 검색 키워드 (제품명)
@@ -58,62 +76,134 @@ class FoodAPIService:
             per_page: 페이지당 결과 수
 
         Returns:
-            FoodSearchResult: 검색 결과
+            FoodSearchResult: 통합 검색 결과
         """
-        if not self.api_key:
+        # API 키가 없으면 샘플 데이터 반환
+        if not self.api_key_1 and not self.api_key_2:
+            return self._get_sample_data(keyword, page, per_page)
+
+        # 두 API 동시 호출
+        tasks = []
+        if self.api_key_1:
+            tasks.append(self._search_food_product(keyword, page, per_page))
+        if self.api_key_2:
+            tasks.append(self._search_food_manufacture(keyword, page, per_page))
+
+        if not tasks:
             return self._get_sample_data(keyword, page, per_page)
 
         try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 결과 합치기
+            all_items = []
+            total_count = 0
+
+            for result in results:
+                if isinstance(result, FoodSearchResult):
+                    all_items.extend(result.items)
+                    total_count += result.total_count
+                elif isinstance(result, Exception):
+                    print(f"API 호출 오류: {result}")
+
+            # 결과가 없으면 샘플 데이터
+            if not all_items:
+                return self._get_sample_data(keyword, page, per_page)
+
+            return FoodSearchResult(
+                total_count=total_count,
+                page=page,
+                per_page=per_page,
+                items=all_items[:per_page]  # 페이지당 결과 수 제한
+            )
+
+        except Exception as e:
+            print(f"통합 검색 오류: {e}")
+            return self._get_sample_data(keyword, page, per_page)
+
+    async def _search_food_product(
+        self,
+        keyword: str,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """식품품목제조보고 API 검색"""
+        try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # API 키가 이미 인코딩되어 있으면 그대로 사용
                 params = {
-                    "serviceKey": self.api_key,
+                    "serviceKey": self.api_key_1,
                     "PRDLST_NM": keyword,
                     "pageNo": str(page),
                     "numOfRows": str(per_page),
                     "type": "json"
                 }
 
-                response = await client.get(
-                    f"{self.BASE_URL}/getFoodFlshdAddtvrptInfoList",
-                    params=params
-                )
+                api_info = self.APIS["food_product"]
+                url = f"{api_info['base_url']}{api_info['endpoint']}"
 
-                print(f"API 요청 URL: {response.url}")
-                print(f"응답 상태: {response.status_code}")
+                response = await client.get(url, params=params)
+                print(f"[식품품목] 요청: {response.url}")
+                print(f"[식품품목] 상태: {response.status_code}")
 
                 response.raise_for_status()
                 data = response.json()
-                print(f"응답 데이터: {data}")
+                print(f"[식품품목] 응답: {str(data)[:200]}...")
 
-                return self._parse_api_response(data, page, per_page)
+                return self._parse_food_product_response(data, page, per_page)
 
         except Exception as e:
-            print(f"API 호출 오류: {e}")
-            return self._get_sample_data(keyword, page, per_page)
+            print(f"[식품품목] API 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
-    def _parse_api_response(
+    async def _search_food_manufacture(
+        self,
+        keyword: str,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """식품제조가공업 API 검색 (식품안전나라)"""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                params = {
+                    "serviceKey": self.api_key_2,
+                    "prdlstNm": keyword,
+                    "pageNo": str(page),
+                    "numOfRows": str(per_page),
+                    "returnType": "json"
+                }
+
+                api_info = self.APIS["food_manufacture"]
+                url = f"{api_info['base_url']}{api_info['endpoint']}"
+
+                response = await client.get(url, params=params)
+                print(f"[식품제조] 요청: {response.url}")
+                print(f"[식품제조] 상태: {response.status_code}")
+
+                response.raise_for_status()
+                data = response.json()
+                print(f"[식품제조] 응답: {str(data)[:200]}...")
+
+                return self._parse_food_manufacture_response(data, page, per_page)
+
+        except Exception as e:
+            print(f"[식품제조] API 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_food_product_response(
         self,
         data: dict,
         page: int,
         per_page: int
     ) -> FoodSearchResult:
-        """API 응답 파싱"""
+        """식품품목제조보고 API 응답 파싱"""
         try:
             body = data.get("body", {})
             total_count = body.get("totalCount", 0)
             items_data = body.get("items", [])
 
-            # items가 None이거나 빈 문자열인 경우 처리
             if not items_data:
-                return FoodSearchResult(
-                    total_count=0,
-                    page=page,
-                    per_page=per_page,
-                    items=[]
-                )
+                return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
-            # items가 단일 객체인 경우 리스트로 변환
             if isinstance(items_data, dict):
                 items_data = [items_data]
 
@@ -127,12 +217,7 @@ class FoodAPIService:
                     manufacturer=item.get("BSSH_NM", ""),
                     report_no=item.get("PRDLST_REPORT_NO", ""),
                     raw_materials=item.get("RAWMTRL_NM", ""),
-                    calories=None,
-                    carbohydrate=None,
-                    protein=None,
-                    fat=None,
-                    sugar=None,
-                    sodium=None
+                    api_source="식품품목제조보고"
                 )
                 items.append(food_item)
 
@@ -143,20 +228,66 @@ class FoodAPIService:
                 items=items
             )
         except Exception as e:
-            print(f"응답 파싱 오류: {e}")
+            print(f"[식품품목] 파싱 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+    def _parse_food_manufacture_response(
+        self,
+        data: dict,
+        page: int,
+        per_page: int
+    ) -> FoodSearchResult:
+        """식품제조가공업 API 응답 파싱"""
+        try:
+            body = data.get("body", {})
+            total_count = body.get("totalCount", 0)
+            items_data = body.get("items", [])
+
+            if not items_data:
+                return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
+
+            if isinstance(items_data, dict):
+                items_data = [items_data]
+
+            items = []
+            for item in items_data:
+                # 영양정보 파싱
+                food_item = FoodItem(
+                    food_name=item.get("prdlstNm", ""),
+                    food_code=item.get("prdlstReportNo", ""),
+                    category=item.get("prdkind", ""),
+                    manufacturer=item.get("manufacture", ""),
+                    report_no=item.get("prdlstReportNo", ""),
+                    raw_materials=item.get("rawmtrl", ""),
+                    calories=self._safe_float(item.get("kcal")),
+                    carbohydrate=self._safe_float(item.get("carbo")),
+                    protein=self._safe_float(item.get("protein")),
+                    fat=self._safe_float(item.get("fat")),
+                    sugar=self._safe_float(item.get("sugar")),
+                    sodium=self._safe_float(item.get("natrium")),
+                    serving_size=item.get("capacity", ""),
+                    api_source="식품안전나라"
+                )
+                items.append(food_item)
+
             return FoodSearchResult(
-                total_count=0,
+                total_count=total_count,
                 page=page,
                 per_page=per_page,
-                items=[]
+                items=items
             )
+        except Exception as e:
+            print(f"[식품제조] 파싱 오류: {e}")
+            return FoodSearchResult(total_count=0, page=page, per_page=per_page, items=[])
 
     def _safe_float(self, value) -> Optional[float]:
         """안전한 float 변환"""
         if value is None or value == "":
             return None
         try:
-            return float(value)
+            # 문자열에서 숫자만 추출
+            cleaned = ''.join(c for c in str(value) if c.isdigit() or c == '.')
+            return float(cleaned) if cleaned else None
         except (ValueError, TypeError):
             return None
 
@@ -179,7 +310,8 @@ class FoodAPIService:
                 fat=1.2,
                 sugar=0.5,
                 sodium=5.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="김치찌개",
@@ -192,7 +324,8 @@ class FoodAPIService:
                 fat=9.8,
                 sugar=2.1,
                 sodium=1250.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="된장찌개",
@@ -205,7 +338,8 @@ class FoodAPIService:
                 fat=4.3,
                 sugar=1.8,
                 sodium=980.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="삼겹살 구이",
@@ -218,7 +352,8 @@ class FoodAPIService:
                 fat=29.1,
                 sugar=0.0,
                 sodium=58.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="비빔밥",
@@ -231,7 +366,8 @@ class FoodAPIService:
                 fat=16.5,
                 sugar=8.2,
                 sodium=820.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="라면",
@@ -244,7 +380,8 @@ class FoodAPIService:
                 fat=16.0,
                 sugar=4.0,
                 sodium=1800.0,
-                manufacturer="농심"
+                manufacturer="농심",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="떡볶이",
@@ -257,7 +394,8 @@ class FoodAPIService:
                 fat=7.2,
                 sugar=15.0,
                 sodium=1100.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="치킨 (후라이드)",
@@ -270,7 +408,8 @@ class FoodAPIService:
                 fat=26.5,
                 sugar=1.2,
                 sodium=650.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="김밥",
@@ -283,7 +422,8 @@ class FoodAPIService:
                 fat=12.0,
                 sugar=5.5,
                 sodium=780.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
             FoodItem(
                 food_name="불고기",
@@ -296,7 +436,8 @@ class FoodAPIService:
                 fat=16.8,
                 sugar=8.5,
                 sodium=520.0,
-                manufacturer="일반"
+                manufacturer="일반",
+                api_source="샘플데이터"
             ),
         ]
 
