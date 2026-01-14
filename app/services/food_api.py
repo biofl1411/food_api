@@ -349,15 +349,19 @@ class FoodAPIService:
         self, keyword: str, page: int, per_page: int
     ) -> CompanySearchResult:
         """식품안전나라 I2860 건강기능식품 업체 검색"""
-        print(f"[I2860] 건강기능식품 업체검색 시작 - keyword: '{keyword}'")
+        print(f"[I2860] 건강기능식품 업체검색 시작 - keyword: '{keyword}', page: {page}, per_page: {per_page}")
         try:
             async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
+                # 페이지네이션 적용 (I1220과 동일한 방식)
+                start_idx = (page - 1) * per_page + 1
+                end_idx = start_idx + per_page - 1
+
                 # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
                 if keyword:
                     encoded_keyword = urllib.parse.quote(keyword, safe='')
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/100/BSSH_NM={encoded_keyword}"
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}/BSSH_NM={encoded_keyword}"
                 else:
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/1/500"
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I2860/json/{start_idx}/{end_idx}"
 
                 print(f"[I2860] 요청 URL: {url}")
                 response = await client.get(url)
@@ -385,15 +389,19 @@ class FoodAPIService:
         self, keyword: str, page: int, per_page: int
     ) -> CompanySearchResult:
         """식품안전나라 I1300 축산물 가공업 허가정보 검색"""
-        print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}'")
+        print(f"[I1300] 축산물 업체검색 시작 - keyword: '{keyword}', page: {page}, per_page: {per_page}")
         try:
             async with httpx.AsyncClient(timeout=self.api_timeout, follow_redirects=True) as client:
+                # 페이지네이션 적용 (I1220과 동일한 방식)
+                start_idx = (page - 1) * per_page + 1
+                end_idx = start_idx + per_page - 1
+
                 # 키워드가 있으면 BSSH_NM 파라미터로 전달하여 API에서 필터링
                 if keyword:
                     encoded_keyword = urllib.parse.quote(keyword, safe='')
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/100/BSSH_NM={encoded_keyword}"
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}/BSSH_NM={encoded_keyword}"
                 else:
-                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/1/500"
+                    url = f"{self.FOOD_SAFETY_BASE_URL}/{self.food_safety_api_key}/I1300/json/{start_idx}/{end_idx}"
 
                 print(f"[I1300] 요청 URL: {url}")
                 response = await client.get(url)
