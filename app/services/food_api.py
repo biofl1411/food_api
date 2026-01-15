@@ -1037,6 +1037,8 @@ class FoodAPIService:
         items = result.items
         keyword_matched = False
 
+        print(f"[필터링] 시작 - 원본 {len(items)}건, keyword='{keyword}', region='{region}', business_type='{business_type}'")
+
         # 키워드 필터 (업체명에 키워드 포함 여부)
         if keyword:
             keyword_lower = keyword.lower()
@@ -1047,6 +1049,7 @@ class FoodAPIService:
             if keyword_items:
                 items = keyword_items
                 keyword_matched = True
+            print(f"[필터링] 키워드 필터 후 {len(items)}건 (keyword_matched={keyword_matched})")
 
         # 지역 필터 (콤마로 구분된 여러 지역)
         if region:
@@ -1056,6 +1059,7 @@ class FoodAPIService:
                     c for c in items
                     if any(r in (c.address or "") or r in (c.region or "") for r in regions)
                 ]
+            print(f"[필터링] 지역 필터 후 {len(items)}건")
 
         # 업종 필터 - 키워드로 특정 업체를 찾은 경우 업종 필터 건너뜀
         # (정부 포털은 여러 DB를 통합하지만 API는 분리되어 있어 업종이 다를 수 있음)
@@ -1064,6 +1068,9 @@ class FoodAPIService:
                 c for c in items
                 if business_type.lower() in (c.business_type or "").lower()
             ]
+            print(f"[필터링] 업종 필터 후 {len(items)}건")
+
+        print(f"[필터링] 최종 결과 {len(items)}건")
 
         return CompanySearchResult(
             total_count=len(items),
