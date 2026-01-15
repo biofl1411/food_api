@@ -211,8 +211,8 @@ class FoodAPIService:
         self.food_safety_api_key = self._decode_api_key(
             os.getenv("PUBLIC_DATA_API_KEY_2", "") or os.getenv("FOOD_SAFETY_API_KEY", "")
         )
-        # API 타임아웃 (초) - 빠른 폴백을 위해 짧게 설정
-        self.api_timeout = 5.0
+        # API 타임아웃 (초)
+        self.api_timeout = 15.0
 
         # 디버그: API 키 로드 상태 출력
         print(f"[FoodAPIService 초기화]")
