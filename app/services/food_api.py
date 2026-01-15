@@ -37,6 +37,27 @@ REGION_CODES = {
     "제주특별자치도": "제주"
 }
 
+# 지역 약어 → 전체 이름 매핑 (필터링용)
+REGION_ALIASES = {
+    "서울": ["서울", "서울특별시"],
+    "부산": ["부산", "부산광역시"],
+    "대구": ["대구", "대구광역시"],
+    "인천": ["인천", "인천광역시"],
+    "광주": ["광주", "광주광역시"],
+    "대전": ["대전", "대전광역시"],
+    "울산": ["울산", "울산광역시"],
+    "세종": ["세종", "세종특별자치시"],
+    "경기": ["경기", "경기도"],
+    "강원": ["강원", "강원도", "강원특별자치도"],
+    "충북": ["충북", "충청북도"],
+    "충남": ["충남", "충청남도"],
+    "전북": ["전북", "전라북도", "전북특별자치도"],
+    "전남": ["전남", "전라남도"],
+    "경북": ["경북", "경상북도"],
+    "경남": ["경남", "경상남도"],
+    "제주": ["제주", "제주도", "제주특별자치도"],
+}
+
 # 업종 코드 매핑
 BUSINESS_TYPES = {
     "전체": "",
@@ -1051,15 +1072,23 @@ class FoodAPIService:
                 keyword_matched = True
             print(f"[필터링] 키워드 필터 후 {len(items)}건 (keyword_matched={keyword_matched})")
 
-        # 지역 필터 (콤마로 구분된 여러 지역)
+        # 지역 필터 (콤마로 구분된 여러 지역) - 약어/전체이름 모두 매칭
         if region:
             regions = [r.strip() for r in region.split(',') if r.strip()]
             if regions:
+                # 지역 약어를 전체 이름 리스트로 확장
+                expanded_regions = []
+                for r in regions:
+                    if r in REGION_ALIASES:
+                        expanded_regions.extend(REGION_ALIASES[r])
+                    else:
+                        expanded_regions.append(r)
+
                 items = [
                     c for c in items
-                    if any(r in (c.address or "") or r in (c.region or "") for r in regions)
+                    if any(er in (c.address or "") or er in (c.region or "") for er in expanded_regions)
                 ]
-            print(f"[필터링] 지역 필터 후 {len(items)}건")
+            print(f"[필터링] 지역 필터 후 {len(items)}건 (검색 지역: {expanded_regions})")
 
         # 업종 필터 - 키워드로 특정 업체를 찾은 경우 업종 필터 건너뜀
         # (정부 포털은 여러 DB를 통합하지만 API는 분리되어 있어 업종이 다를 수 있음)
